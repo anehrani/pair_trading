@@ -33,6 +33,12 @@ def kss_estar_tstat(series: np.ndarray, *, max_lags: int = 12) -> float:
     if y.size < 200:
         return float("nan")
 
+    # KSS is typically applied to demeaned (and often standardized) series.
+    y = y - float(np.mean(y))
+    s = float(np.std(y, ddof=1))
+    if s > 0:
+        y = y / s
+
     dy = np.diff(y)
     y_lag = y[:-1]
     y_cub = y_lag ** 3

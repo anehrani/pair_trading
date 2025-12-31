@@ -40,7 +40,8 @@ class BacktestConfig:
     formation_hours: int = 21 * 24
     trading_hours: int = 7 * 24
     step_hours: int = 7 * 24
-    eg_alpha: float = 0.10
+    # EG can be too restrictive in short rolling windows; allow disabling by setting to 1.0.
+    eg_alpha: float = 1.00
     adf_alpha: float = 0.10
     kss_critical_10pct: float = -1.92
     use_intercept_beta: bool = False
@@ -156,15 +157,42 @@ def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tupl
     s1 = ref_f - beta1 * p1_f
     s2 = ref_f - beta2 * p2_f
 
-    m1 = fit_best_marginal(s1.to_numpy(dtype=float))
-    m2 = fit_best_marginal(s2.to_numpy(dtype=float))
+    try:
+        m1 = fit_best_marginal(s1.to_numpy(dtype=float))
+        m2 = fit_best_marginal(s2.to_numpy(dtype=float))
 
-    u1 = m1.cdf(s1.to_numpy(dtype=float))
-    u2 = m2.cdf(s2.to_numpy(dtype=float))
-    u = np.column_stack([u1, u2])
+        u1 = m1.cdf(s1.to_numpy(dtype=float))
+        u2 = m2.cdf(s2.to_numpy(dtype=float))
+        u = np.column_stack([u1, u2])
+        u = u[np.isfinite(u).all(axis=1)]
+        if u.shape[0] < 50:
+            raise ValueError("Not enough valid PIT samples to fit copula")
 
-    fitted = fit_copula_candidates(u)
-    best = fitted[0]
+        fitted = fit_copula_candidates(u)
+
+        best = None
+        for cand in fitted:
+            try:
+                _ = cand.copula.cdf(np.array([[0.5, 0.5]], dtype=float))
+                best = cand
+                break
+            except NotImplementedError:
+                continue
+            except Exception:
+                continue
+        if best is None:
+            raise ValueError("No fitted copula supported CDF evaluation")
+    except Exception as e:
+        return (
+            [],
+            {
+                "skipped": True,
+                "reason": "marginal_or_copula_fit_failed",
+                "pair": (sym1, sym2),
+                "error": str(e),
+            },
+            pd.Series(0.0, index=trading.index),
+        )
 
     trades: list[Trade] = []
 
@@ -336,9 +364,13 @@ def performance_summary(trades: list[Trade], equity_pnl: pd.Series, cfg: Backtes
     periods_per_year = 365.0 * 24.0
 
     total_return = float(equity.iloc[-1] / equity.iloc[0] - 1.0)
-    mean_r = float(rets.mean())
+
+    # CAGR based annual return (more stable than compounding mean hourly return)
+    n_periods = max(1, int(len(equity) - 1))
+    annual_return = float((equity.iloc[-1] / equity.iloc[0]) ** (periods_per_year / n_periods) - 1.0)
+
+    mean_r = float(rets.mean()) if len(rets) else 0.0
     vol_r = float(rets.std(ddof=1)) if len(rets) > 1 else 0.0
-    annual_return = float((1.0 + mean_r) ** periods_per_year - 1.0) if np.isfinite(mean_r) else float("nan")
     annual_vol = float(vol_r * np.sqrt(periods_per_year)) if vol_r > 0 else float("nan")
     sharpe = float((mean_r / vol_r) * np.sqrt(periods_per_year)) if vol_r > 0 else float("nan")
 
@@ -372,8 +404,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--step-hours", type=int, default=7 * 24)
     p.add_argument("--alpha1", type=float, default=0.20)
     p.add_argument("--alpha2", type=float, default=0.10)
+    p.add_argument("--eg-alpha", type=float, default=1.00, help="Engle–Granger p-value threshold (set 1.0 to disable)")
+    p.add_argument("--adf-alpha", type=float, default=0.10, help="ADF p-value threshold on spread")
+    p.add_argument("--kss-critical", type=float, default=-1.92, help="KSS 10%% critical value (paper: -1.92)")
     p.add_argument("--fee", type=float, default=0.0004)
     p.add_argument("--capital", type=float, default=20000.0)
+    p.add_argument(
+        "--log-prices",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use log prices for cointegration/spreads (default: enabled)",
+    )
     p.add_argument("--start", default=None, help="Optional start timestamp (UTC, ISO8601)")
     p.add_argument("--end", default=None, help="Optional end timestamp (UTC, ISO8601)")
     return p.parse_args(argv)
@@ -389,6 +430,9 @@ def main(argv: list[str] | None = None) -> int:
         step_hours=args.step_hours,
         alpha1=args.alpha1,
         alpha2=args.alpha2,
+        eg_alpha=args.eg_alpha,
+        adf_alpha=args.adf_alpha,
+        kss_critical_10pct=args.kss_critical,
         fee_rate=args.fee,
         capital_per_side=args.capital,
     )
@@ -408,6 +452,10 @@ def main(argv: list[str] | None = None) -> int:
     # Remove columns with too many NaNs early.
     closes = closes.dropna(axis=1, thresh=int(len(closes) * 0.95))
 
+    if args.log_prices:
+        # Cointegration/spread modeling is typically done in log-price space.
+        closes = np.log(closes.astype(float))
+
     total_window = cfg.formation_hours + cfg.trading_hours
     if len(closes) < total_window:
         raise ValueError("Not enough data for a single formation+trading window")
@@ -416,11 +464,18 @@ def main(argv: list[str] | None = None) -> int:
     cycle_metas: list[dict] = []
     equity_curves: list[pd.Series] = []
 
+    cumulative_pnl = 0.0
+
     i = 0
     while i + total_window <= len(closes):
         trades, meta, equity = run_cycle(closes, i, cfg)
         cycle_metas.append(meta)
         all_trades.extend(trades)
+
+        # Convert per-cycle PnL to cumulative PnL across cycles.
+        if not equity.empty:
+            equity = equity + cumulative_pnl
+            cumulative_pnl = float(equity.iloc[-1])
         equity_curves.append(equity)
         i += cfg.step_hours
 
@@ -428,9 +483,33 @@ def main(argv: list[str] | None = None) -> int:
     # Trading windows are non-overlapping; if there are duplicates, keep last.
     equity_pnl = equity_pnl[~equity_pnl.index.duplicated(keep="last")]
 
+    # Include formation gaps as flat equity for calendar-time metrics.
+    if not equity_pnl.empty:
+        start_ts = equity_pnl.index.min()
+        end_ts = equity_pnl.index.max()
+        full_index = closes.loc[start_ts:end_ts].index
+        equity_pnl = equity_pnl.reindex(full_index).ffill().fillna(0.0)
+
     summary = performance_summary(all_trades, equity_pnl, cfg)
     print("Summary:", summary)
     print("Cycles:", len(cycle_metas), "Trades:", len(all_trades))
+
+    skipped_reasons: dict[str, int] = {}
+    skipped_errors: dict[str, int] = {}
+    for m in cycle_metas:
+        if not m.get("skipped"):
+            continue
+        r = str(m.get("reason", "unknown"))
+        skipped_reasons[r] = skipped_reasons.get(r, 0) + 1
+        if r == "marginal_or_copula_fit_failed":
+            err = str(m.get("error", ""))
+            if err:
+                skipped_errors[err] = skipped_errors.get(err, 0) + 1
+    if skipped_reasons:
+        print("Skipped cycles by reason:", dict(sorted(skipped_reasons.items(), key=lambda kv: (-kv[1], kv[0]))))
+    if skipped_errors:
+        top = sorted(skipped_errors.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        print("Top fit-failure errors:", top)
 
     # Write trades CSV for inspection
     out = Path("data") / f"trades_{cfg.interval}_a1_{cfg.alpha1:.2f}_a2_{cfg.alpha2:.2f}.csv"

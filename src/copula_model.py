@@ -128,6 +128,32 @@ def fit_copula_candidates(u: np.ndarray) -> list[FittedCopula]:
                 candidates.append((f"{name}_rot{rot}", RotatedCopula(base.__class__(dim=2), rot)))
 
     fitted: list[FittedCopula] = []
+
+    def _log_lik_value(cop: object, u_: np.ndarray) -> float:
+        """Return a scalar log-likelihood for a fitted copula.
+
+        copulae sometimes exposes `log_lik` as a scalar or a vector; in either
+        case we convert to a scalar by summing.
+        """
+        ll_attr = getattr(cop, "log_lik", None)
+        ll = None
+        if ll_attr is not None:
+            if callable(ll_attr):
+                try:
+                    ll = ll_attr()
+                except Exception:
+                    ll = None
+            else:
+                ll = ll_attr
+
+        if ll is not None:
+            arr = np.asarray(ll, dtype=float)
+            return float(arr) if arr.ndim == 0 else float(np.nansum(arr))
+
+        pdf = np.asarray(cop.pdf(u_), dtype=float)
+        pdf = np.clip(pdf, 1e-300, None)
+        return float(np.sum(np.log(pdf)))
+
     for name, c in candidates:
         try:
             # RotatedCopula wraps an underlying copula that supports fit()
@@ -135,22 +161,12 @@ def fit_copula_candidates(u: np.ndarray) -> list[FittedCopula]:
                 c.base.fit(u)
             else:
                 c.fit(u)
+
             # Many copulae objects expose log_lik; fall back to log(pdf) sum.
             if isinstance(c, RotatedCopula):
-                # base has log-likelihood for the transformed data distribution.
-                base = c.base
-                if hasattr(base, "log_lik") and base.log_lik is not None:
-                    log_lik = float(base.log_lik)
-                else:
-                    pdf = np.asarray(c.pdf(u), dtype=float)
-                    pdf = np.clip(pdf, 1e-300, None)
-                    log_lik = float(np.sum(np.log(pdf)))
-            elif hasattr(c, "log_lik") and c.log_lik is not None:
-                log_lik = float(c.log_lik)
+                log_lik = _log_lik_value(c.base, c._transform(u))
             else:
-                pdf = np.asarray(c.pdf(u), dtype=float)
-                pdf = np.clip(pdf, 1e-300, None)
-                log_lik = float(np.sum(np.log(pdf)))
+                log_lik = _log_lik_value(c, u)
 
             # Parameter count: use len(params) if present, else 1.
             k = 1

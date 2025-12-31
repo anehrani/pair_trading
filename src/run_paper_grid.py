@@ -22,6 +22,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--interval", default="1h")
     p.add_argument("--fee", type=float, default=0.0004)
     p.add_argument("--capital", type=float, default=20000.0)
+    p.add_argument(
+        "--log-prices",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use log prices for cointegration/spreads (default: enabled)",
+    )
     p.add_argument("--start", default=None)
     p.add_argument("--end", default=None)
     return p.parse_args(argv)
@@ -42,6 +48,10 @@ def run_one(args: argparse.Namespace, alpha1: float) -> dict:
         "--capital",
         str(args.capital),
     ]
+    if args.log_prices:
+        argv += ["--log-prices"]
+    else:
+        argv += ["--no-log-prices"]
     if args.start:
         argv += ["--start", args.start]
     if args.end:
