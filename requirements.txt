@@ -1,0 +1,16 @@
+# Core scientific computing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# Statistical modeling and time series
+statsmodels>=0.14.0
+
+# Copula library
+copulae>=0.7.9
+
+# Data fetching
+requests>=2.31.0
+
+# Optional: For better performance
+numba>=0.57.0
