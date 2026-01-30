@@ -103,6 +103,59 @@ python -m src.download_binance_futures \
 
 ### 2. Run Backtest
 
+#### Using the Performance Simulator (Recommended)
+
+The **Performance Simulator** library provides comprehensive backtesting with detailed metrics and reports:
+
+```python
+from src.performance_simulator import PerformanceSimulator, SimulationConfig
+
+# Configure simulation
+config = SimulationConfig(
+    initial_capital=100_000,
+    reference_symbol="BTCUSDT",
+    alpha1=0.20,
+    alpha2=0.10,
+    formation_hours=21*24,  # 21 days
+    trading_hours=7*24,      # 7 days
+    fee_rate=0.0004,
+)
+
+# Run simulation
+simulator = PerformanceSimulator(config)
+results = simulator.run_simulation(
+    data_dir="data/binance_futures_1h",
+    start_date="2020-01-01",
+    end_date="2024-01-01"
+)
+
+# Generate comprehensive reports
+simulator.generate_report(results, output_dir="reports", format="all")
+```
+
+**Command Line:**
+
+```bash
+python run_simulation.py \
+  --data data/binance_futures_1h \
+  --capital 100000 \
+  --alpha1 0.20 \
+  --alpha2 0.10 \
+  --formation-days 21 \
+  --trading-days 7 \
+  --output reports/my_backtest
+```
+
+**Key Features:**
+- 📊 Comprehensive metrics (Sharpe, Sortino, Calmar, Omega ratios)
+- 📈 Risk analysis (VaR, CVaR, maximum drawdown, drawdown duration)
+- 📑 Multiple report formats (Text, JSON, CSV)
+- 🔍 Detailed trade analytics
+- 📉 Equity curve and returns analysis
+- ⚡ Fast and memory-efficient
+
+See [docs/PERFORMANCE_SIMULATOR.md](docs/PERFORMANCE_SIMULATOR.md) for detailed documentation and examples.
+
 #### Using the Main Strategy Class
 
 ```python
@@ -203,7 +256,38 @@ pair_trading/
 
 ## Key Modules
 
-### `src/main.py` (NEW)
+### `src/performance_simulator.py` (NEW)
+
+Comprehensive performance simulation library with advanced metrics and reporting:
+
+```python
+class PerformanceSimulator:
+    """Complete backtest simulator with detailed analytics"""
+    
+    def run_simulation(self, data_dir, start_date, end_date) -> SimulationResults
+    def generate_report(self, results, output_dir, format)
+    def print_summary(self, results)
+
+class SimulationConfig:
+    """Configuration for all simulation parameters"""
+    
+class PerformanceMetrics:
+    """Complete performance metrics including:
+    - Return metrics: Total, CAGR, annualized returns
+    - Risk metrics: Volatility, VaR, CVaR, max drawdown
+    - Risk-adjusted: Sharpe, Sortino, Calmar, Omega ratios
+    - Trade stats: Win rate, profit factor, avg win/loss
+    """
+```
+
+Features:
+- **Comprehensive Metrics**: 25+ performance indicators
+- **Risk Analysis**: VaR, CVaR, drawdown duration, downside volatility
+- **Multiple Reports**: Text, JSON, CSV exports
+- **Trade Analytics**: Detailed per-trade and cycle analysis
+- **Parameter Testing**: Easy comparison of different configurations
+
+### `src/main.py`
 
 High-level API implementing the complete algorithm with clear documentation:
 

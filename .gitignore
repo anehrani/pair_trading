@@ -3,3 +3,9 @@ data/*
 .vscode/
 __pycache__/
 *.pyc
+
+
+
+*.csv
+*.xlsx
+*.xls
