@@ -85,6 +85,8 @@ requests>=2.31.0
 
 ### 1. Download Data
 
+#### Option A: Binance Futures Data
+
 Download hourly or 5-minute cryptocurrency data from Binance:
 
 ```bash
@@ -100,6 +102,31 @@ python -m src.download_binance_futures \
   --end 2023-01-19 \
   --out data/binance_futures_5m
 ```
+
+#### Option B: Bybit Data (Crypto + TradFi) ✨ NEW
+
+Download data from Bybit, including crypto perpetuals and TradFi assets:
+
+```bash
+# Crypto perpetuals (USDT-margined)
+python -m src.download_bybit_data \
+  --category linear \
+  --interval 60 \
+  --start 2022-01-01 \
+  --end 2024-12-31 \
+  --out data/bybit_linear_1h
+
+# Custom symbols
+python -m src.download_bybit_data \
+  --category linear \
+  --interval 60 \
+  --start 2022-01-01 \
+  --end 2024-12-31 \
+  --symbols BTCUSDT ETHUSDT SOLUSDT \
+  --out data/bybit_custom_1h
+```
+
+**See [docs/BYBIT_INTEGRATION.md](docs/BYBIT_INTEGRATION.md) for complete Bybit guide**
 
 ### 2. Run Backtest
 

@@ -11,6 +11,7 @@ copulae>=0.7.9
 
 # Data fetching
 requests>=2.31.0
+yfinance>=0.2.50  # For downloading stock data from Yahoo Finance
 
 # Optional: For better performance
 numba>=0.57.0

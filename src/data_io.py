@@ -26,8 +26,29 @@ def read_binance_klines_csv(path: Path) -> pd.Series:
     return s
 
 
+def read_klines_csv(path: Path) -> pd.Series:
+    """Reads a CSV from either Binance or Bybit downloader and returns close series.
+    
+    This function works with both:
+    - src/download_binance_futures.py output
+    - src/download_bybit_data.py output
+    
+    Index is UTC timestamps for candle open times.
+    """
+    df = pd.read_csv(path)
+    # open_time_utc is ISO8601 with timezone; parse robustly.
+    ts = pd.to_datetime(df["open_time_utc"], utc=True)
+    close = pd.to_numeric(df["close"], errors="coerce")
+    s = pd.Series(close.values, index=ts, name="close").sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    return s
+
+
 def load_closes_from_dir(directory: Path, *, interval: str) -> PricePanel:
-    """Loads all *_<interval>.csv files in a directory into a single aligned DataFrame."""
+    """Loads all *_<interval>.csv files in a directory into a single aligned DataFrame.
+    
+    Works with data from both Binance and Bybit downloaders.
+    """
     directory = Path(directory)
     if not directory.exists():
         raise FileNotFoundError(f"Data directory not found: {directory}")
@@ -36,7 +57,7 @@ def load_closes_from_dir(directory: Path, *, interval: str) -> PricePanel:
     for csv_path in sorted(directory.glob(f"*_{interval}.csv")):
         name = csv_path.name
         symbol = name[: -len(f"_{interval}.csv")]
-        s = read_binance_klines_csv(csv_path)
+        s = read_klines_csv(csv_path)  # Updated to use generic reader
         series_by_symbol[symbol] = s
 
     if not series_by_symbol:
