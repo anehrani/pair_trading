@@ -21,7 +21,7 @@ def main():
     if not data_dir.exists():
         print(f"Data directory not found: {data_dir}")
         print("\nPlease download data first:")
-        print("  python -m src.download_binance_futures \\")
+        print("  python -m get_data.download_binance_futures \\")
         print("    --interval 1h \\")
         print("    --start 2021-01-01 \\")
         print("    --end 2023-01-19 \\")

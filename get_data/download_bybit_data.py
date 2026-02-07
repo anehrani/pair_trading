@@ -9,7 +9,7 @@ Bybit API Documentation:
 
 Example Usage:
   # Download tokenized stock data (default stocks)
-  python -m src.download_bybit_data \
+  python -m get_data.download_bybit_data \
     --interval 60 \
     --start 2023-01-01 \
     --end 2024-12-31 \
@@ -17,7 +17,7 @@ Example Usage:
     --out data/bybit_stocks_1h
 
   # Download specific tokenized stocks
-  python -m src.download_bybit_data \
+  python -m get_data.download_bybit_data \
     --interval 60 \
     --start 2023-01-01 \
     --end 2024-12-31 \

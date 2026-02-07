@@ -35,7 +35,7 @@ def download_bybit_tradfi_data():
     
     # Download all default tokenized stocks
     cmd = [
-        "python", "-m", "src.download_bybit_data",
+        "python", "-m", "get_data.download_bybit_data",
         "--category", "linear",
         "--interval", "60",  # 1 hour
         "--start", "2023-01-01",
@@ -170,7 +170,7 @@ def quick_test_with_bybit_crypto():
     if not Path(config.data_dir).exists():
         print(f"\n⚠️  Data directory not found: {config.data_dir}")
         print("Download data first using:")
-        print(f"  python -m src.download_bybit_data \\")
+        print(f"  python -m get_data.download_bybit_data \\")
         print(f"    --category linear \\")
         print(f"    --interval 60 \\")
         print(f"    --start 2022-01-01 \\")

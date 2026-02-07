@@ -1,0 +1,1210 @@
+================================================================================
+COINTEGRATED PAIRS ANALYSIS REPORT
+================================================================================
+Generated: 2026-02-01 00:09:21
+Total pairs found: 166
+================================================================================
+
+SUMMARY STATISTICS
+--------------------------------------------------------------------------------
+Total cointegrated pairs: 166
+Average EG p-value: 0.0226
+Average ADF p-value: 0.0129
+Average KSS statistic: -6.1937
+Average observations: 9443.7
+
+TOP 20 PAIRS BY STATISTICAL STRENGTH
+(Sorted by combined p-value score)
+--------------------------------------------------------------------------------
+Rank   Reference            Asset                Beta       EG p-val   ADF p-val  KSS stat  
+--------------------------------------------------------------------------------
+19     Apple                LindeGroup           0.4545     0.0000     0.0021     -2.3432   
+20     LindeGroup           Apple                2.0721     0.0000     0.0001     -2.4339   
+16     Apple                HomeDepot            0.5113     0.0162     0.0249     -2.5176   
+17     HomeDepot            Apple                1.8307     0.0062     0.0038     -2.8710   
+13     AmericanTower        Palladium            0.1027     0.0404     0.0153     -2.4663   
+37     NaturalGas           BrentCrude           0.0478     0.0360     0.0074     -2.6119   
+14     Palladium            AmericanTower        8.7670     0.0222     0.0069     -2.9957   
+1      Alphabet             Caterpillar          0.5027     0.0046     0.0025     -3.4092   
+161    VIX                  Silver               0.7916     0.0000     0.0476     -3.1074   
+2      Caterpillar          Alphabet             1.9303     0.0085     0.0012     -3.4870   
+34     Corn                 BrentCrude           5.9091     0.0149     0.0037     -3.4442   
+66     CocaCola             ExxonMobil           0.5888     0.0572     0.0162     -2.9595   
+130    ProctorGamble        JohnsonJohnson       0.8716     0.0451     0.0141     -3.1144   
+39     Soybeans             BrentCrude           14.1728    0.0169     0.0115     -3.5070   
+33     BrentCrude           Corn                 0.1615     0.0446     0.0043     -3.3652   
+38     BrentCrude           Soybeans             0.0677     0.0399     0.0137     -3.5046   
+61     CocaCola             DAX                  0.0031     0.0129     0.0042     -3.8810   
+137    Microsoft            LindeGroup           0.8858     0.0023     0.0027     -4.0234   
+131    JohnsonJohnson       Russell2000          0.0693     0.0000     0.0099     -3.9896   
+104    ExxonMobil           SP500                0.0196     0.0968     0.0270     -2.8730   
+
+
+ALL COINTEGRATED PAIRS
+--------------------------------------------------------------------------------
+
+Pair #19: Apple vs LindeGroup
+  Beta coefficient: 0.454477
+  Engle-Granger p-value: 0.000039
+  ADF p-value: 0.002143
+  KSS t-statistic: -2.343179
+  Observations: 8465
+
+Pair #20: LindeGroup vs Apple
+  Beta coefficient: 2.072051
+  Engle-Granger p-value: 0.000026
+  ADF p-value: 0.000088
+  KSS t-statistic: -2.433865
+  Observations: 8465
+
+Pair #16: Apple vs HomeDepot
+  Beta coefficient: 0.511341
+  Engle-Granger p-value: 0.016150
+  ADF p-value: 0.024864
+  KSS t-statistic: -2.517563
+  Observations: 11180
+
+Pair #17: HomeDepot vs Apple
+  Beta coefficient: 1.830701
+  Engle-Granger p-value: 0.006212
+  ADF p-value: 0.003805
+  KSS t-statistic: -2.870962
+  Observations: 11180
+
+Pair #13: AmericanTower vs Palladium
+  Beta coefficient: 0.102748
+  Engle-Granger p-value: 0.040410
+  ADF p-value: 0.015283
+  KSS t-statistic: -2.466285
+  Observations: 6412
+
+Pair #37: NaturalGas vs BrentCrude
+  Beta coefficient: 0.047814
+  Engle-Granger p-value: 0.035996
+  ADF p-value: 0.007437
+  KSS t-statistic: -2.611885
+  Observations: 4605
+
+Pair #14: Palladium vs AmericanTower
+  Beta coefficient: 8.767032
+  Engle-Granger p-value: 0.022159
+  ADF p-value: 0.006870
+  KSS t-statistic: -2.995670
+  Observations: 6412
+
+Pair #1: Alphabet vs Caterpillar
+  Beta coefficient: 0.502742
+  Engle-Granger p-value: 0.004581
+  ADF p-value: 0.002520
+  KSS t-statistic: -3.409243
+  Observations: 5397
+
+Pair #161: VIX vs Silver
+  Beta coefficient: 0.791605
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.047566
+  KSS t-statistic: -3.107385
+  Observations: 6374
+
+Pair #2: Caterpillar vs Alphabet
+  Beta coefficient: 1.930334
+  Engle-Granger p-value: 0.008532
+  ADF p-value: 0.001217
+  KSS t-statistic: -3.486982
+  Observations: 5397
+
+Pair #34: Corn vs BrentCrude
+  Beta coefficient: 5.909110
+  Engle-Granger p-value: 0.014908
+  ADF p-value: 0.003671
+  KSS t-statistic: -3.444195
+  Observations: 4601
+
+Pair #66: CocaCola vs ExxonMobil
+  Beta coefficient: 0.588816
+  Engle-Granger p-value: 0.057165
+  ADF p-value: 0.016174
+  KSS t-statistic: -2.959527
+  Observations: 16128
+
+Pair #130: ProctorGamble vs JohnsonJohnson
+  Beta coefficient: 0.871557
+  Engle-Granger p-value: 0.045140
+  ADF p-value: 0.014131
+  KSS t-statistic: -3.114441
+  Observations: 16128
+
+Pair #39: Soybeans vs BrentCrude
+  Beta coefficient: 14.172829
+  Engle-Granger p-value: 0.016888
+  ADF p-value: 0.011471
+  KSS t-statistic: -3.506979
+  Observations: 4603
+
+Pair #33: BrentCrude vs Corn
+  Beta coefficient: 0.161493
+  Engle-Granger p-value: 0.044563
+  ADF p-value: 0.004251
+  KSS t-statistic: -3.365151
+  Observations: 4601
+
+Pair #38: BrentCrude vs Soybeans
+  Beta coefficient: 0.067652
+  Engle-Granger p-value: 0.039870
+  ADF p-value: 0.013668
+  KSS t-statistic: -3.504643
+  Observations: 4603
+
+Pair #61: CocaCola vs DAX
+  Beta coefficient: 0.003096
+  Engle-Granger p-value: 0.012903
+  ADF p-value: 0.004151
+  KSS t-statistic: -3.880957
+  Observations: 9394
+
+Pair #137: Microsoft vs LindeGroup
+  Beta coefficient: 0.885849
+  Engle-Granger p-value: 0.002307
+  ADF p-value: 0.002686
+  KSS t-statistic: -4.023430
+  Observations: 8465
+
+Pair #131: JohnsonJohnson vs Russell2000
+  Beta coefficient: 0.069303
+  Engle-Granger p-value: 0.000028
+  ADF p-value: 0.009921
+  KSS t-statistic: -3.989643
+  Observations: 9671
+
+Pair #104: ExxonMobil vs SP500
+  Beta coefficient: 0.019555
+  Engle-Granger p-value: 0.096809
+  ADF p-value: 0.027023
+  KSS t-statistic: -2.873007
+  Observations: 16128
+
+Pair #112: HomeDepot vs JohnsonJohnson
+  Beta coefficient: 1.719887
+  Engle-Granger p-value: 0.039422
+  ADF p-value: 0.023495
+  KSS t-statistic: -3.554861
+  Observations: 11180
+
+Pair #31: Boeing vs ProctorGamble
+  Beta coefficient: 1.715327
+  Engle-Granger p-value: 0.040657
+  ADF p-value: 0.010813
+  KSS t-statistic: -3.685398
+  Observations: 16128
+
+Pair #87: NaturalGas vs CrudeOilWTI
+  Beta coefficient: 0.061756
+  Engle-Granger p-value: 0.075898
+  ADF p-value: 0.022507
+  KSS t-statistic: -3.248417
+  Observations: 6382
+
+Pair #57: Russell2000 vs Chevron
+  Beta coefficient: 16.179270
+  Engle-Granger p-value: 0.021910
+  ADF p-value: 0.014499
+  KSS t-statistic: -3.881905
+  Observations: 9671
+
+Pair #150: NaturalGas vs Wheat
+  Beta coefficient: 0.007391
+  Engle-Granger p-value: 0.088433
+  ADF p-value: 0.024811
+  KSS t-statistic: -3.136463
+  Observations: 6351
+
+Pair #136: LindeGroup vs Microsoft
+  Beta coefficient: 1.076511
+  Engle-Granger p-value: 0.002675
+  ADF p-value: 0.000759
+  KSS t-statistic: -4.242733
+  Observations: 8465
+
+Pair #123: JPMorgan vs Meta
+  Beta coefficient: 0.431405
+  Engle-Granger p-value: 0.024584
+  ADF p-value: 0.007880
+  KSS t-statistic: -3.966942
+  Observations: 3445
+
+Pair #145: NaturalGas vs Palladium
+  Beta coefficient: 0.002796
+  Engle-Granger p-value: 0.003086
+  ADF p-value: 0.088979
+  KSS t-statistic: -3.395659
+  Observations: 5934
+
+Pair #30: Boeing vs JohnsonJohnson
+  Beta coefficient: 1.568784
+  Engle-Granger p-value: 0.014646
+  ADF p-value: 0.003492
+  KSS t-statistic: -4.135330
+  Observations: 16128
+
+Pair #62: DAX vs CocaCola
+  Beta coefficient: 315.156151
+  Engle-Granger p-value: 0.017288
+  ADF p-value: 0.003142
+  KSS t-statistic: -4.170794
+  Observations: 9394
+
+Pair #96: Russell2000 vs DAX
+  Beta coefficient: 0.115948
+  Engle-Granger p-value: 0.048130
+  ADF p-value: 0.012761
+  KSS t-statistic: -3.800068
+  Observations: 9394
+
+Pair #70: CocaCola vs NASDAQ
+  Beta coefficient: 0.004050
+  Engle-Granger p-value: 0.024080
+  ADF p-value: 0.023177
+  KSS t-statistic: -3.967307
+  Observations: 13863
+
+Pair #132: Russell2000 vs JohnsonJohnson
+  Beta coefficient: 14.049797
+  Engle-Granger p-value: 0.000010
+  ADF p-value: 0.002106
+  KSS t-statistic: -4.419941
+  Observations: 9671
+
+Pair #27: Boeing vs CocaCola
+  Beta coefficient: 4.031028
+  Engle-Granger p-value: 0.040851
+  ADF p-value: 0.010086
+  KSS t-statistic: -3.946645
+  Observations: 16128
+
+Pair #55: ProctorGamble vs Chevron
+  Beta coefficient: 1.009974
+  Engle-Granger p-value: 0.003038
+  ADF p-value: 0.000542
+  KSS t-statistic: -4.433325
+  Observations: 16128
+
+Pair #52: Chevron vs NextEraEnergy
+  Beta coefficient: 1.977346
+  Engle-Granger p-value: 0.062175
+  ADF p-value: 0.014264
+  KSS t-statistic: -3.730115
+  Observations: 13349
+
+Pair #50: JohnsonJohnson vs Chevron
+  Beta coefficient: 1.143847
+  Engle-Granger p-value: 0.014746
+  ADF p-value: 0.002872
+  KSS t-statistic: -4.319913
+  Observations: 16128
+
+Pair #109: NaturalGas vs HangSeng
+  Beta coefficient: 0.000193
+  Engle-Granger p-value: 0.042305
+  ADF p-value: 0.064840
+  KSS t-statistic: -3.455718
+  Observations: 6092
+
+Pair #46: Chevron vs DAX
+  Beta coefficient: 0.006832
+  Engle-Granger p-value: 0.042632
+  ADF p-value: 0.031330
+  KSS t-statistic: -3.810777
+  Observations: 9394
+
+Pair #81: NaturalGas vs Corn
+  Beta coefficient: 0.009084
+  Engle-Granger p-value: 0.095037
+  ADF p-value: 0.045953
+  KSS t-statistic: -3.165979
+  Observations: 6340
+
+Pair #113: JohnsonJohnson vs HomeDepot
+  Beta coefficient: 0.531307
+  Engle-Granger p-value: 0.079174
+  ADF p-value: 0.010740
+  KSS t-statistic: -3.730493
+  Observations: 11180
+
+Pair #124: Meta vs JPMorgan
+  Beta coefficient: 2.245842
+  Engle-Granger p-value: 0.016002
+  ADF p-value: 0.019832
+  KSS t-statistic: -4.277753
+  Observations: 3445
+
+Pair #95: DAX vs Russell2000
+  Beta coefficient: 8.437545
+  Engle-Granger p-value: 0.085237
+  ADF p-value: 0.014855
+  KSS t-statistic: -3.639976
+  Observations: 9394
+
+Pair #93: DAX vs JohnsonJohnson
+  Beta coefficient: 118.474062
+  Engle-Granger p-value: 0.012498
+  ADF p-value: 0.029877
+  KSS t-statistic: -4.235876
+  Observations: 9394
+
+Pair #98: Disney vs JohnsonJohnson
+  Beta coefficient: 0.846643
+  Engle-Granger p-value: 0.061021
+  ADF p-value: 0.024711
+  KSS t-statistic: -3.812806
+  Observations: 16128
+
+Pair #94: JohnsonJohnson vs DAX
+  Beta coefficient: 0.008033
+  Engle-Granger p-value: 0.018445
+  ADF p-value: 0.076089
+  KSS t-statistic: -3.751147
+  Observations: 9394
+
+Pair #147: NaturalGas vs Soybeans
+  Beta coefficient: 0.003851
+  Engle-Granger p-value: 0.064767
+  ADF p-value: 0.079546
+  KSS t-statistic: -3.262691
+  Observations: 6363
+
+Pair #63: Disney vs CocaCola
+  Beta coefficient: 2.189600
+  Engle-Granger p-value: 0.028106
+  ADF p-value: 0.006644
+  KSS t-statistic: -4.427291
+  Observations: 16128
+
+Pair #47: DAX vs Chevron
+  Beta coefficient: 137.570870
+  Engle-Granger p-value: 0.053944
+  ADF p-value: 0.016274
+  KSS t-statistic: -4.080704
+  Observations: 9394
+
+Pair #11: AmericanTower vs Disney
+  Beta coefficient: 1.374354
+  Engle-Granger p-value: 0.018963
+  ADF p-value: 0.012421
+  KSS t-statistic: -4.537783
+  Observations: 7025
+
+Pair #54: Chevron vs ProctorGamble
+  Beta coefficient: 0.951076
+  Engle-Granger p-value: 0.005524
+  ADF p-value: 0.000792
+  KSS t-statistic: -4.832079
+  Observations: 16128
+
+Pair #12: Disney vs AmericanTower
+  Beta coefficient: 0.665942
+  Engle-Granger p-value: 0.012150
+  ADF p-value: 0.004781
+  KSS t-statistic: -4.769713
+  Observations: 7025
+
+Pair #141: VIX vs Meta
+  Beta coefficient: 0.048930
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.001580
+  KSS t-statistic: -5.006275
+  Observations: 3445
+
+Pair #56: Chevron vs Russell2000
+  Beta coefficient: 0.058402
+  Engle-Granger p-value: 0.034534
+  ADF p-value: 0.034245
+  KSS t-statistic: -4.340818
+  Observations: 9671
+
+Pair #67: CocaCola vs HomeDepot
+  Beta coefficient: 0.199051
+  Engle-Granger p-value: 0.037811
+  ADF p-value: 0.019952
+  KSS t-statistic: -4.480647
+  Observations: 11180
+
+Pair #28: Boeing vs Disney
+  Beta coefficient: 1.818534
+  Engle-Granger p-value: 0.001961
+  ADF p-value: 0.000335
+  KSS t-statistic: -5.067701
+  Observations: 16128
+
+Pair #48: HomeDepot vs Chevron
+  Beta coefficient: 1.960734
+  Engle-Granger p-value: 0.096690
+  ADF p-value: 0.073513
+  KSS t-statistic: -3.394619
+  Observations: 11180
+
+Pair #146: NaturalGas vs Platinum
+  Beta coefficient: 0.003461
+  Engle-Granger p-value: 0.029199
+  ADF p-value: 0.021340
+  KSS t-statistic: -4.622772
+  Observations: 5695
+
+Pair #9: NextEraEnergy vs Amazon
+  Beta coefficient: 0.418969
+  Engle-Granger p-value: 0.025446
+  ADF p-value: 0.018109
+  KSS t-statistic: -4.708162
+  Observations: 7223
+
+Pair #3: VIX vs Alphabet
+  Beta coefficient: 0.155296
+  Engle-Granger p-value: 0.000005
+  ADF p-value: 0.019467
+  KSS t-statistic: -4.955017
+  Observations: 5397
+
+Pair #5: HomeDepot vs Amazon
+  Beta coefficient: 1.887399
+  Engle-Granger p-value: 0.001258
+  ADF p-value: 0.002314
+  KSS t-statistic: -5.122152
+  Observations: 7223
+
+Pair #24: NaturalGas vs BankOfAmerica
+  Beta coefficient: 0.166315
+  Engle-Granger p-value: 0.061950
+  ADF p-value: 0.071754
+  KSS t-statistic: -3.846622
+  Observations: 6377
+
+Pair #108: VIX vs Gold
+  Beta coefficient: 0.011300
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.013655
+  KSS t-statistic: -5.095805
+  Observations: 6373
+
+Pair #119: NASDAQ vs HomeDepot
+  Beta coefficient: 49.499420
+  Engle-Granger p-value: 0.080678
+  ADF p-value: 0.004324
+  KSS t-statistic: -4.399911
+  Observations: 11180
+
+Pair #53: NextEraEnergy vs Chevron
+  Beta coefficient: 0.444757
+  Engle-Granger p-value: 0.097773
+  ADF p-value: 0.063414
+  KSS t-statistic: -3.708191
+  Observations: 13349
+
+Pair #138: LindeGroup vs NASDAQ
+  Beta coefficient: 0.022068
+  Engle-Granger p-value: 0.012104
+  ADF p-value: 0.003518
+  KSS t-statistic: -5.250606
+  Observations: 8465
+
+Pair #69: JohnsonJohnson vs CocaCola
+  Beta coefficient: 2.593100
+  Engle-Granger p-value: 0.009424
+  ADF p-value: 0.006287
+  KSS t-statistic: -5.270168
+  Observations: 16128
+
+Pair #4: Amazon vs HomeDepot
+  Beta coefficient: 0.508432
+  Engle-Granger p-value: 0.002432
+  ADF p-value: 0.011573
+  KSS t-statistic: -5.305754
+  Observations: 7223
+
+Pair #117: Microsoft vs HomeDepot
+  Beta coefficient: 0.995305
+  Engle-Granger p-value: 0.021204
+  ADF p-value: 0.012583
+  KSS t-statistic: -5.143336
+  Observations: 10049
+
+Pair #49: Chevron vs JohnsonJohnson
+  Beta coefficient: 0.837207
+  Engle-Granger p-value: 0.006470
+  ADF p-value: 0.001406
+  KSS t-statistic: -5.405864
+  Observations: 16128
+
+Pair #7: LindeGroup vs Amazon
+  Beta coefficient: 2.088796
+  Engle-Granger p-value: 0.049211
+  ADF p-value: 0.020686
+  KSS t-statistic: -4.801179
+  Observations: 7223
+
+Pair #139: NASDAQ vs LindeGroup
+  Beta coefficient: 43.722101
+  Engle-Granger p-value: 0.021421
+  ADF p-value: 0.002606
+  KSS t-statistic: -5.289276
+  Observations: 8465
+
+Pair #26: Boeing vs Chevron
+  Beta coefficient: 1.772882
+  Engle-Granger p-value: 0.081769
+  ADF p-value: 0.026377
+  KSS t-statistic: -4.454259
+  Observations: 16128
+
+Pair #68: CocaCola vs JohnsonJohnson
+  Beta coefficient: 0.375826
+  Engle-Granger p-value: 0.004184
+  ADF p-value: 0.002210
+  KSS t-statistic: -5.522458
+  Observations: 16128
+
+Pair #74: Russell2000 vs CocaCola
+  Beta coefficient: 36.908381
+  Engle-Granger p-value: 0.000172
+  ADF p-value: 0.000036
+  KSS t-statistic: -5.651134
+  Observations: 9671
+
+Pair #148: NaturalGas vs VIX
+  Beta coefficient: 0.188739
+  Engle-Granger p-value: 0.077629
+  ADF p-value: 0.000154
+  KSS t-statistic: -4.885645
+  Observations: 6377
+
+Pair #118: HomeDepot vs NASDAQ
+  Beta coefficient: 0.019602
+  Engle-Granger p-value: 0.032646
+  ADF p-value: 0.004086
+  KSS t-statistic: -5.335443
+  Observations: 11180
+
+Pair #6: Amazon vs LindeGroup
+  Beta coefficient: 0.441920
+  Engle-Granger p-value: 0.057663
+  ADF p-value: 0.057803
+  KSS t-statistic: -4.556499
+  Observations: 7223
+
+Pair #114: HomeDepot vs LindeGroup
+  Beta coefficient: 0.872120
+  Engle-Granger p-value: 0.065593
+  ADF p-value: 0.018086
+  KSS t-statistic: -4.890318
+  Observations: 8465
+
+Pair #156: ProctorGamble vs Russell2000
+  Beta coefficient: 0.060674
+  Engle-Granger p-value: 0.002905
+  ADF p-value: 0.004176
+  KSS t-statistic: -5.656657
+  Observations: 9671
+
+Pair #73: CocaCola vs Russell2000
+  Beta coefficient: 0.026385
+  Engle-Granger p-value: 0.000266
+  ADF p-value: 0.000066
+  KSS t-statistic: -5.733129
+  Observations: 9671
+
+Pair #120: HomeDepot vs NextEraEnergy
+  Beta coefficient: 4.372640
+  Engle-Granger p-value: 0.000114
+  ADF p-value: 0.000017
+  KSS t-statistic: -5.737466
+  Observations: 11180
+
+Pair #43: VIX vs Caterpillar
+  Beta coefficient: 0.088990
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.074201
+  KSS t-statistic: -5.011935
+  Observations: 9087
+
+Pair #18: Apple vs JPMorgan
+  Beta coefficient: 0.880079
+  Engle-Granger p-value: 0.075951
+  ADF p-value: 0.032803
+  KSS t-statistic: -4.724784
+  Observations: 11375
+
+Pair #127: NASDAQ vs JohnsonJohnson
+  Beta coefficient: 87.291861
+  Engle-Granger p-value: 0.084734
+  ADF p-value: 0.040897
+  KSS t-statistic: -4.690802
+  Observations: 13863
+
+Pair #8: Amazon vs NextEraEnergy
+  Beta coefficient: 2.220058
+  Engle-Granger p-value: 0.040730
+  ADF p-value: 0.064408
+  KSS t-statistic: -4.919240
+  Observations: 7223
+
+Pair #116: HomeDepot vs Microsoft
+  Beta coefficient: 0.949802
+  Engle-Granger p-value: 0.014104
+  ADF p-value: 0.004481
+  KSS t-statistic: -5.786274
+  Observations: 10049
+
+Pair #82: Corn vs Soybeans
+  Beta coefficient: 0.412556
+  Engle-Granger p-value: 0.007952
+  ADF p-value: 0.002808
+  KSS t-statistic: -5.879713
+  Observations: 6343
+
+Pair #157: Russell2000 vs ProctorGamble
+  Beta coefficient: 15.826060
+  Engle-Granger p-value: 0.003454
+  ADF p-value: 0.001689
+  KSS t-statistic: -5.962736
+  Observations: 9671
+
+Pair #40: VIX vs BrentCrude
+  Beta coefficient: 0.229425
+  Engle-Granger p-value: 0.000206
+  ADF p-value: 0.000070
+  KSS t-statistic: -6.032795
+  Observations: 4602
+
+Pair #83: Soybeans vs Corn
+  Beta coefficient: 2.376146
+  Engle-Granger p-value: 0.006855
+  ADF p-value: 0.002366
+  KSS t-statistic: -5.944968
+  Observations: 6343
+
+Pair #29: Disney vs Boeing
+  Beta coefficient: 0.489448
+  Engle-Granger p-value: 0.005344
+  ADF p-value: 0.000710
+  KSS t-statistic: -6.026926
+  Observations: 16128
+
+Pair #126: JohnsonJohnson vs NASDAQ
+  Beta coefficient: 0.010678
+  Engle-Granger p-value: 0.042980
+  ADF p-value: 0.015065
+  KSS t-statistic: -5.510924
+  Observations: 13863
+
+Pair #51: Chevron vs NASDAQ
+  Beta coefficient: 0.008948
+  Engle-Granger p-value: 0.066891
+  ADF p-value: 0.029216
+  KSS t-statistic: -5.133219
+  Observations: 13863
+
+Pair #72: ProctorGamble vs CocaCola
+  Beta coefficient: 2.289684
+  Engle-Granger p-value: 0.021608
+  ADF p-value: 0.004109
+  KSS t-statistic: -5.855659
+  Observations: 16128
+
+Pair #153: VIX vs Palladium
+  Beta coefficient: 0.015274
+  Engle-Granger p-value: 0.000025
+  ADF p-value: 0.004556
+  KSS t-statistic: -6.198512
+  Observations: 6412
+
+Pair #121: NextEraEnergy vs HomeDepot
+  Beta coefficient: 0.222377
+  Engle-Granger p-value: 0.000153
+  ADF p-value: 0.000015
+  KSS t-statistic: -6.255335
+  Observations: 11180
+
+Pair #76: SP500 vs CocaCola
+  Beta coefficient: 79.410796
+  Engle-Granger p-value: 0.004531
+  ADF p-value: 0.000457
+  KSS t-statistic: -6.273575
+  Observations: 16128
+
+Pair #125: VIX vs JPMorgan
+  Beta coefficient: 0.152000
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.022145
+  KSS t-statistic: -6.102427
+  Observations: 9087
+
+Pair #101: Disney vs ProctorGamble
+  Beta coefficient: 0.939173
+  Engle-Granger p-value: 0.029157
+  ADF p-value: 0.008275
+  KSS t-statistic: -5.995089
+  Observations: 16128
+
+Pair #155: Wheat vs Platinum
+  Beta coefficient: 0.477786
+  Engle-Granger p-value: 0.084031
+  ADF p-value: 0.084344
+  KSS t-statistic: -4.714301
+  Observations: 5700
+
+Pair #58: Chevron vs SP500
+  Beta coefficient: 0.027071
+  Engle-Granger p-value: 0.025745
+  ADF p-value: 0.005979
+  KSS t-statistic: -6.132641
+  Observations: 16128
+
+Pair #71: CocaCola vs ProctorGamble
+  Beta coefficient: 0.426957
+  Engle-Granger p-value: 0.038297
+  ADF p-value: 0.004561
+  KSS t-statistic: -6.083740
+  Observations: 16128
+
+Pair #134: SP500 vs JohnsonJohnson
+  Beta coefficient: 30.009866
+  Engle-Granger p-value: 0.010810
+  ADF p-value: 0.001705
+  KSS t-statistic: -6.413455
+  Observations: 16128
+
+Pair #78: VIX vs Copper
+  Beta coefficient: 5.699582
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.000117
+  KSS t-statistic: -6.659001
+  Observations: 6374
+
+Pair #144: VIX vs NVIDIA
+  Beta coefficient: 0.161821
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000115
+  KSS t-statistic: -6.671916
+  Observations: 6798
+
+Pair #22: Microsoft vs Apple
+  Beta coefficient: 1.919430
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000000
+  KSS t-statistic: -6.825943
+  Observations: 10049
+
+Pair #15: VIX vs AmericanTower
+  Beta coefficient: 0.128875
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.016676
+  KSS t-statistic: -6.665952
+  Observations: 7025
+
+Pair #143: VIX vs NASDAQ
+  Beta coefficient: 0.001861
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.014215
+  KSS t-statistic: -6.776021
+  Observations: 9087
+
+Pair #99: Disney vs Palladium
+  Beta coefficient: 0.071391
+  Engle-Granger p-value: 0.046336
+  ADF p-value: 0.008006
+  KSS t-statistic: -6.422943
+  Observations: 6412
+
+Pair #133: JohnsonJohnson vs SP500
+  Beta coefficient: 0.032014
+  Engle-Granger p-value: 0.008601
+  ADF p-value: 0.002822
+  KSS t-statistic: -6.887745
+  Observations: 16128
+
+Pair #115: LindeGroup vs HomeDepot
+  Beta coefficient: 1.110628
+  Engle-Granger p-value: 0.098602
+  ADF p-value: 0.021175
+  KSS t-statistic: -5.808740
+  Observations: 8465
+
+Pair #149: VIX vs NaturalGas
+  Beta coefficient: 3.602031
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.000015
+  KSS t-statistic: -7.051192
+  Observations: 6377
+
+Pair #41: BrentCrude vs Wheat
+  Beta coefficient: 0.126409
+  Engle-Granger p-value: 0.022023
+  ADF p-value: 0.001495
+  KSS t-statistic: -6.844296
+  Observations: 4603
+
+Pair #85: Corn vs Wheat
+  Beta coefficient: 0.766096
+  Engle-Granger p-value: 0.001892
+  ADF p-value: 0.000343
+  KSS t-statistic: -7.058620
+  Observations: 6374
+
+Pair #86: Wheat vs Corn
+  Beta coefficient: 1.267217
+  Engle-Granger p-value: 0.000272
+  ADF p-value: 0.000236
+  KSS t-statistic: -7.104721
+  Observations: 6374
+
+Pair #10: VIX vs Amazon
+  Beta coefficient: 0.137495
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.020687
+  KSS t-statistic: -6.973568
+  Observations: 7223
+
+Pair #142: VIX vs Microsoft
+  Beta coefficient: 0.071247
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.005091
+  KSS t-statistic: -7.134691
+  Observations: 9087
+
+Pair #75: CocaCola vs SP500
+  Beta coefficient: 0.012278
+  Engle-Granger p-value: 0.001671
+  ADF p-value: 0.000266
+  KSS t-statistic: -7.207141
+  Observations: 16128
+
+Pair #59: SP500 vs Chevron
+  Beta coefficient: 34.670071
+  Engle-Granger p-value: 0.066048
+  ADF p-value: 0.008066
+  KSS t-statistic: -6.496308
+  Observations: 16128
+
+Pair #111: Wheat vs HangSeng
+  Beta coefficient: 0.025577
+  Engle-Granger p-value: 0.071291
+  ADF p-value: 0.006582
+  KSS t-statistic: -6.480021
+  Observations: 6111
+
+Pair #160: VIX vs SP500
+  Beta coefficient: 0.006357
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.009832
+  KSS t-statistic: -7.163434
+  Observations: 9087
+
+Pair #64: CocaCola vs DowJones
+  Beta coefficient: 0.001542
+  Engle-Granger p-value: 0.001601
+  ADF p-value: 0.000280
+  KSS t-statistic: -7.267660
+  Observations: 8581
+
+Pair #140: VIX vs LindeGroup
+  Beta coefficient: 0.075530
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.014523
+  KSS t-statistic: -7.263709
+  Observations: 8465
+
+Pair #100: Palladium vs Disney
+  Beta coefficient: 12.642567
+  Engle-Granger p-value: 0.044389
+  ADF p-value: 0.008807
+  KSS t-statistic: -6.883328
+  Observations: 6412
+
+Pair #90: VIX vs CrudeOilWTI
+  Beta coefficient: 0.260105
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.000018
+  KSS t-statistic: -7.418550
+  Observations: 6382
+
+Pair #42: Wheat vs BrentCrude
+  Beta coefficient: 7.510712
+  Engle-Granger p-value: 0.001914
+  ADF p-value: 0.001094
+  KSS t-statistic: -7.395106
+  Observations: 4603
+
+Pair #23: VIX vs Apple
+  Beta coefficient: 0.126773
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000078
+  KSS t-statistic: -7.428791
+  Observations: 9087
+
+Pair #163: Soybeans vs Wheat
+  Beta coefficient: 1.841944
+  Engle-Granger p-value: 0.002120
+  ADF p-value: 0.000100
+  KSS t-statistic: -7.447745
+  Observations: 6358
+
+Pair #65: DowJones vs CocaCola
+  Beta coefficient: 640.168690
+  Engle-Granger p-value: 0.002000
+  ADF p-value: 0.000260
+  KSS t-statistic: -7.466609
+  Observations: 8581
+
+Pair #84: VIX vs Corn
+  Beta coefficient: 0.041988
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.000007
+  KSS t-statistic: -7.502585
+  Observations: 6383
+
+Pair #164: Wheat vs Soybeans
+  Beta coefficient: 0.529020
+  Engle-Granger p-value: 0.000579
+  ADF p-value: 0.000090
+  KSS t-statistic: -7.511667
+  Observations: 6358
+
+Pair #122: VIX vs HomeDepot
+  Beta coefficient: 0.082716
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000216
+  KSS t-statistic: -7.520677
+  Observations: 9087
+
+Pair #129: NextEraEnergy vs JohnsonJohnson
+  Beta coefficient: 0.392543
+  Engle-Granger p-value: 0.054297
+  ADF p-value: 0.026517
+  KSS t-statistic: -6.729717
+  Observations: 13349
+
+Pair #77: VIX vs CocaCola
+  Beta coefficient: 0.527181
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.007690
+  KSS t-statistic: -7.492134
+  Observations: 9087
+
+Pair #32: VIX vs Boeing
+  Beta coefficient: 0.098186
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000036
+  KSS t-statistic: -7.577292
+  Observations: 9087
+
+Pair #165: VIX vs UnitedHealth
+  Beta coefficient: 0.057526
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.003410
+  KSS t-statistic: -7.563266
+  Observations: 9087
+
+Pair #162: VIX vs Soybeans
+  Beta coefficient: 0.017633
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.000005
+  KSS t-statistic: -7.612185
+  Observations: 6375
+
+Pair #103: VIX vs DowJones
+  Beta coefficient: 0.000815
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.006684
+  KSS t-statistic: -7.632120
+  Observations: 8581
+
+Pair #97: VIX vs DAX
+  Beta coefficient: 0.001685
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000192
+  KSS t-statistic: -7.810849
+  Observations: 8903
+
+Pair #21: Apple vs Microsoft
+  Beta coefficient: 0.511614
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000000
+  KSS t-statistic: -7.853775
+  Observations: 10049
+
+Pair #152: VIX vs Nikkei225
+  Beta coefficient: 0.000841
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000014
+  KSS t-statistic: -7.878157
+  Observations: 8564
+
+Pair #151: VIX vs NextEraEnergy
+  Beta coefficient: 0.387066
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.010319
+  KSS t-statistic: -7.792179
+  Observations: 9087
+
+Pair #166: VIX vs Wheat
+  Beta coefficient: 0.033468
+  Engle-Granger p-value: 0.000001
+  ADF p-value: 0.000001
+  KSS t-statistic: -7.919966
+  Observations: 6395
+
+Pair #102: VIX vs Disney
+  Beta coefficient: 0.207787
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000054
+  KSS t-statistic: -7.954260
+  Observations: 9087
+
+Pair #135: VIX vs JohnsonJohnson
+  Beta coefficient: 0.187172
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.016954
+  KSS t-statistic: -7.839023
+  Observations: 9087
+
+Pair #158: VIX vs ProctorGamble
+  Beta coefficient: 0.213586
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000291
+  KSS t-statistic: -8.015933
+  Observations: 9087
+
+Pair #45: CocaCola vs Chevron
+  Beta coefficient: 0.437270
+  Engle-Granger p-value: 0.000015
+  ADF p-value: 0.000002
+  KSS t-statistic: -8.094470
+  Observations: 16128
+
+Pair #128: JohnsonJohnson vs NextEraEnergy
+  Beta coefficient: 2.384436
+  Engle-Granger p-value: 0.087633
+  ADF p-value: 0.015149
+  KSS t-statistic: -7.090449
+  Observations: 13349
+
+Pair #159: VIX vs Russell2000
+  Beta coefficient: 0.014050
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.002750
+  KSS t-statistic: -8.094511
+  Observations: 9087
+
+Pair #107: Wheat vs FTSE100
+  Beta coefficient: 0.084020
+  Engle-Granger p-value: 0.074094
+  ADF p-value: 0.033119
+  KSS t-statistic: -7.095761
+  Observations: 6286
+
+Pair #106: VIX vs FTSE100
+  Beta coefficient: 0.003156
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000000
+  KSS t-statistic: -8.232831
+  Observations: 8920
+
+Pair #44: Chevron vs CocaCola
+  Beta coefficient: 2.208243
+  Engle-Granger p-value: 0.000016
+  ADF p-value: 0.000003
+  KSS t-statistic: -8.363624
+  Observations: 16128
+
+Pair #60: VIX vs Chevron
+  Beta coefficient: 0.216673
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.008741
+  KSS t-statistic: -8.443176
+  Observations: 9087
+
+Pair #110: VIX vs HangSeng
+  Beta coefficient: 0.000950
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000005
+  KSS t-statistic: -8.591225
+  Observations: 8684
+
+Pair #105: VIX vs ExxonMobil
+  Beta coefficient: 0.314563
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.011235
+  KSS t-statistic: -8.527923
+  Observations: 9087
+
+Pair #25: VIX vs BankOfAmerica
+  Beta coefficient: 0.748118
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.001045
+  KSS t-statistic: -8.633083
+  Observations: 9087
+
+Pair #154: VIX vs Platinum
+  Beta coefficient: 0.016493
+  Engle-Granger p-value: 0.000000
+  ADF p-value: 0.000112
+  KSS t-statistic: -8.781766
+  Observations: 6401
+
+Pair #79: Corn vs CrudeOilWTI
+  Beta coefficient: 6.170342
+  Engle-Granger p-value: 0.022104
+  ADF p-value: 0.002559
+  KSS t-statistic: -12.355656
+  Observations: 6345
+
+Pair #80: CrudeOilWTI vs Corn
+  Beta coefficient: 0.151799
+  Engle-Granger p-value: 0.018069
+  ADF p-value: 0.002477
+  KSS t-statistic: -13.453554
+  Observations: 6345
+
+Pair #89: Soybeans vs CrudeOilWTI
+  Beta coefficient: 14.892651
+  Engle-Granger p-value: 0.013623
+  ADF p-value: 0.000832
+  KSS t-statistic: -15.448019
+  Observations: 6363
+
+Pair #88: CrudeOilWTI vs Soybeans
+  Beta coefficient: 0.063593
+  Engle-Granger p-value: 0.005358
+  ADF p-value: 0.000854
+  KSS t-statistic: -16.087996
+  Observations: 6363
+
+Pair #91: CrudeOilWTI vs Wheat
+  Beta coefficient: 0.118734
+  Engle-Granger p-value: 0.000545
+  ADF p-value: 0.000028
+  KSS t-statistic: -18.394615
+  Observations: 6356
+
+Pair #92: Wheat vs CrudeOilWTI
+  Beta coefficient: 7.982424
+  Engle-Granger p-value: 0.000113
+  ADF p-value: 0.000018
+  KSS t-statistic: -18.516924
+  Observations: 6356
+
+Pair #35: BrentCrude vs CrudeOilWTI
+  Beta coefficient: 1.070819
+  Engle-Granger p-value: 0.004688
+  ADF p-value: 0.000732
+  KSS t-statistic: -35.426772
+  Observations: 4604
+
+Pair #36: CrudeOilWTI vs BrentCrude
+  Beta coefficient: 0.929804
+  Engle-Granger p-value: 0.002882
+  ADF p-value: 0.000691
+  KSS t-statistic: -35.493161
+  Observations: 4604
+
+================================================================================
+END OF REPORT
+================================================================================

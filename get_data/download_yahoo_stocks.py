@@ -12,14 +12,14 @@ Yahoo Finance provides free access to:
 
 Example Usage:
   # Download default tech stocks
-  python -m src.download_yahoo_stocks \
+  python -m get_data.download_yahoo_stocks \
     --interval 1h \
     --start 2023-01-01 \
     --end 2024-12-31 \
     --out data/yahoo_stocks_1h
 
   # Download specific stocks
-  python -m src.download_yahoo_stocks \
+  python -m get_data.download_yahoo_stocks \
     --interval 1h \
     --start 2023-01-01 \
     --end 2024-12-31 \
@@ -27,7 +27,7 @@ Example Usage:
     --out data/yahoo_stocks_1h
 
   # Download with different interval
-  python -m src.download_yahoo_stocks \
+  python -m get_data.download_yahoo_stocks \
     --interval 1d \
     --start 2020-01-01 \
     --end 2024-12-31 \

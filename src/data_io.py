@@ -13,7 +13,7 @@ class PricePanel:
 
 
 def read_binance_klines_csv(path: Path) -> pd.Series:
-    """Reads a CSV written by src/download_binance_futures.py and returns close series.
+    """Reads a CSV written by get_data/download_binance_futures.py and returns close series.
 
     Index is UTC timestamps for candle open times.
     """
@@ -30,8 +30,8 @@ def read_klines_csv(path: Path) -> pd.Series:
     """Reads a CSV from either Binance or Bybit downloader and returns close series.
     
     This function works with both:
-    - src/download_binance_futures.py output
-    - src/download_bybit_data.py output
+    - get_data/download_binance_futures.py output
+    - get_data/download_bybit_data.py output
     
     Index is UTC timestamps for candle open times.
     """

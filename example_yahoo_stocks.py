@@ -27,7 +27,7 @@ def download_stock_data(preset="tech", days=60):
     start_date = end_date - timedelta(days=days)
     
     cmd = [
-        sys.executable, "-m", "src.download_yahoo_stocks",
+        sys.executable, "-m", "get_data.download_yahoo_stocks",
         "--preset", preset,
         "--interval", "1h",
         "--start", start_date.strftime("%Y-%m-%d"),

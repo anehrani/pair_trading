@@ -8,13 +8,13 @@ This repo's strategy (per Tadi & Witzany, Financial Innovation 2025) uses:
 This script downloads PUBLIC data from Binance Futures API (no API key required).
 
 Example:
-  /path/to/.venv/bin/python -m src.download_binance_futures \
+  /path/to/.venv/bin/python -m get_data.download_binance_futures \
     --interval 1h \
     --start 2021-01-01 \
     --end 2023-01-19 \
     --out data/binance_futures_1h
 
-  /path/to/.venv/bin/python -m src.download_binance_futures \
+  /path/to/.venv/bin/python -m get_data.download_binance_futures \
     --interval 5m \
     --start 2021-01-01 \
     --end 2023-01-19 \

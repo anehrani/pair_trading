@@ -90,13 +90,13 @@ requests>=2.31.0
 Download hourly or 5-minute cryptocurrency data from Binance:
 
 ```bash
-python -m src.download_binance_futures \
+python -m get_data.download_binance_futures \
   --interval 1h \
   --start 2021-01-01 \
   --end 2023-01-19 \
   --out data/binance_futures_1h
 
-python -m src.download_binance_futures \
+python -m get_data.download_binance_futures \
   --interval 5m \
   --start 2021-01-01 \
   --end 2023-01-19 \
@@ -109,7 +109,7 @@ Download data from Bybit, including crypto perpetuals and TradFi assets:
 
 ```bash
 # Crypto perpetuals (USDT-margined)
-python -m src.download_bybit_data \
+python -m get_data.download_bybit_data \
   --category linear \
   --interval 60 \
   --start 2022-01-01 \
@@ -117,7 +117,7 @@ python -m src.download_bybit_data \
   --out data/bybit_linear_1h
 
 # Custom symbols
-python -m src.download_bybit_data \
+python -m get_data.download_bybit_data \
   --category linear \
   --interval 60 \
   --start 2022-01-01 \
@@ -264,17 +264,24 @@ python -m src.backtest_reference_copula \
 pair_trading/
 ├── src/
 │   ├── __init__.py
-│   ├── main.py                        # Main strategy class (NEW)
+│   ├── main.py                        # Main strategy class
 │   ├── backtest_reference_copula.py   # Complete backtest implementation
 │   ├── copula_model.py                # Copula fitting & h-functions
 │   ├── stats_tests.py                 # Cointegration tests (EG, ADF, KSS)
 │   ├── data_io.py                     # Data loading utilities
-│   ├── download_binance_futures.py    # Data download from Binance API
+│   ├── performance_simulator.py       # Performance analytics
 │   └── run_paper_grid.py              # Paper experiment grid
+├── get_data/                          # Data downloading tools (NEW)
+│   ├── __init__.py
+│   ├── download_binance_futures.py    # Binance futures data
+│   ├── download_bybit_data.py         # Bybit data (Crypto + TradFi)
+│   ├── download_yahoo_stocks.py       # Yahoo Finance stocks
+│   └── download_all_data.py           # Bulk Yahoo Finance downloader
 ├── data/
 │   ├── binance_futures_1h/            # Hourly price data
-│   ├── binance_futures_5m/            # 5-minute price data
-│   └── trades_*.csv                   # Backtest results
+│   └── ...
+├── docs/                              # Additional documentation
+├── reports/                           # Backtest reports
 ├── copula_based_pair_trading.pdf      # Original paper
 ├── README.md
 ├── pyproject.toml
