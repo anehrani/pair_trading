@@ -18,6 +18,11 @@ import yaml
 from dotenv import load_dotenv
 from loguru import logger
 
+
+# Add project root to path so we can import 'src' package
+if __name__ == "__main__":
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.okx_client import OKXClient
 from src.data_buffer import DataBuffer
 from src.strategy_core import (
