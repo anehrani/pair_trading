@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import yaml
 from dotenv import load_dotenv
 from loguru import logger
@@ -340,7 +341,9 @@ class LiveTrader:
         """Main trading loop."""
         logger.info("=== Starting Trading Loop ===")
 
-        interval_seconds = self.config["strategy"]["interval"] * 60
+        interval_str = self.config["strategy"]["interval"]
+        interval_map = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1H": 3600, "2H": 7200, "4H": 14400}
+        interval_seconds = interval_map.get(interval_str, 300)  # Default to 5m if unknown
 
         while True:
             try:
