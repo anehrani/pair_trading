@@ -1,0 +1,76 @@
+# Live Trading Configuration for Copula-Based Pair Trading
+
+# OKX API Configuration
+okx:
+  # Set these environment variables: OKX_API_KEY, OKX_API_SECRET, OKX_PASSPHRASE
+  api_key: ${OKX_API_KEY}
+  api_secret: ${OKX_API_SECRET}
+  passphrase: ${OKX_PASSPHRASE}
+  demo: true  # Demo trading mode
+  base_url: https://www.okx.com
+
+# Trading Strategy Parameters
+strategy:
+  # Reference asset (Bitcoin)
+  reference_symbol: BTC-USDT-SWAP
+  
+  # 20 USDT-margined perpetual swaps (OKX format)
+  symbols:
+    - ETH-USDT-SWAP
+    - BCH-USDT-SWAP
+    - XRP-USDT-SWAP
+    - EOS-USDT-SWAP
+    - LTC-USDT-SWAP
+    - TRX-USDT-SWAP
+    - ETC-USDT-SWAP
+    - LINK-USDT-SWAP
+    - XLM-USDT-SWAP
+    - ADA-USDT-SWAP
+    - XMR-USDT-SWAP
+    - DASH-USDT-SWAP
+    - ZEC-USDT-SWAP
+    - XTZ-USDT-SWAP
+    - ATOM-USDT-SWAP
+    - BNB-USDT-SWAP
+    - ONT-USDT-SWAP
+    - IOTA-USDT-SWAP
+    - BAT-USDT-SWAP
+  
+  # Time windows (paper uses 21-day formation + 7-day trading)
+  formation_days: 21
+  trading_days: 7
+  interval: 5m  # 5-minute candles
+  
+  # Trading thresholds (paper's best: α₁=0.20, α₂=0.10)
+  alpha1: 0.20  # Entry threshold
+  alpha2: 0.10  # Exit threshold
+  
+  # Cointegration test parameters
+  eg_alpha: 1.00  # Engle-Granger p-value (1.0 = disabled, use ADF+KSS only)
+  adf_alpha: 0.10  # ADF p-value threshold
+  kss_critical: -1.92  # KSS 10% critical value
+  
+  # Capital management
+  capital_per_side: 20000.0  # USDT per leg
+  initial_capital: 20000.0  # Starting capital
+  fee_rate: 0.0005  # 0.05% taker fee on OKX
+
+# Risk Management (disabled per user request)
+risk:
+  enabled: false
+  max_drawdown: 0.50  # Not enforced
+  daily_loss_limit: 0.20  # Not enforced
+  max_leverage: 5.0  # Not enforced
+
+# Logging and Monitoring
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  log_dir: logs
+  trade_log: data/trades.csv
+  performance_log: data/performance.csv
+
+# Data Storage
+data:
+  buffer_file: data/price_buffer.parquet
+  state_file: data/state.json
+  model_cache_dir: data/models

@@ -1,0 +1,16 @@
+LICENSE
+README.md
+pyproject.toml
+src/__init__.py
+src/backtest_reference_copula.py
+src/copula_model.py
+src/data_io.py
+src/download_binance_futures.py
+src/main.py
+src/run_paper_grid.py
+src/stats_tests.py
+src/pair_trading.egg-info/PKG-INFO
+src/pair_trading.egg-info/SOURCES.txt
+src/pair_trading.egg-info/dependency_links.txt
+src/pair_trading.egg-info/requires.txt
+src/pair_trading.egg-info/top_level.txt
