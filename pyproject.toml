@@ -10,11 +10,9 @@ dependencies = [
     "scipy>=1.10.0",
     "statsmodels>=0.14.0",
     "copulae>=0.7.9",
-    "scipy>=1.10.0",
-    "statsmodels>=0.14.0",
-    "copulae>=0.7.9",
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
     "loguru>=0.7.0",
     "requests>=2.31.0",
+    "pyarrow>=14.0.0",
 ]

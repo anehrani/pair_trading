@@ -26,15 +26,15 @@ strategy:
     - LINK-USDT-SWAP
     - XLM-USDT-SWAP
     - ADA-USDT-SWAP
-    - XMR-USDT-SWAP
-    - DASH-USDT-SWAP
-    - ZEC-USDT-SWAP
     - XTZ-USDT-SWAP
     - ATOM-USDT-SWAP
     - BNB-USDT-SWAP
-    - ONT-USDT-SWAP
     - IOTA-USDT-SWAP
-    - BAT-USDT-SWAP
+    - ZIL-USDT-SWAP
+    - BAND-USDT-SWAP
+    - MINA-USDT-SWAP
+    - PEPE-USDT-SWAP
+    - FLOKI-USDT-SWAP
   
   # Time windows (paper uses 21-day formation + 7-day trading)
   formation_days: 21
