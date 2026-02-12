@@ -1,40 +1,60 @@
 # Live Trading Configuration for Copula-Based Pair Trading
 
-# OKX API Configuration
+# Trading Setup
+mode: paper  # 'live' or 'paper'
+
+# OKX API Configuration (Used only if mode: live)
 okx:
-  # Set these environment variables: OKX_API_KEY, OKX_API_SECRET, OKX_PASSPHRASE
   api_key: ${OKX_API_KEY}
   api_secret: ${OKX_API_SECRET}
   passphrase: ${OKX_PASSPHRASE}
   demo: true  # Demo trading mode
   base_url: https://www.okx.com
 
+# Paper Trading Configuration
+paper:
+  initial_capital: 100000.0
+  transaction_fee: 0.001  # 0.1%
+
 # Trading Strategy Parameters
 strategy:
-  # Reference asset (Bitcoin)
-  reference_symbol: BTC-USDT-SWAP
+  # Reference asset (S&P 500 ETF)
+  reference_symbol: SPY
   
-  # 20 USDT-margined perpetual swaps (OKX format)
+  # Assets (S&P 500 Stocks + Commodities)
   symbols:
-    - ETH-USDT-SWAP
-    - BCH-USDT-SWAP
-    - XRP-USDT-SWAP
-    - EOS-USDT-SWAP
-    - LTC-USDT-SWAP
-    - TRX-USDT-SWAP
-    - ETC-USDT-SWAP
-    - LINK-USDT-SWAP
-    - XLM-USDT-SWAP
-    - ADA-USDT-SWAP
-    - XTZ-USDT-SWAP
-    - ATOM-USDT-SWAP
-    - BNB-USDT-SWAP
-    - IOTA-USDT-SWAP
-    - ZIL-USDT-SWAP
-    - BAND-USDT-SWAP
-    - MINA-USDT-SWAP
-    - PEPE-USDT-SWAP
-    - FLOKI-USDT-SWAP
+    # S&P 500 Top Holdings
+    - AAPL
+    - MSFT
+    - AMZN
+    - NVDA
+    - GOOGL
+    - META
+    - TSLA
+    - BRK-B
+    - UNH
+    - JNJ
+    - JPM
+    - XOM
+    - V
+    - PG
+    - MA
+    - HD
+    - CVX
+    - ABBV
+    - MRK
+    - KO
+    
+    # Commodities ETFs
+    - GLD   # Gold
+    - SLV   # Silver
+    - USO   # Oil
+    - UNG   # Natural Gas
+    - DBA   # Agriculture
+    - DBC   # Commodity Index
+    - PALL  # Palladium
+    - PPLT  # Platinum
+    - COPX  # Copper Miners
   
   # Time windows (paper uses 21-day formation + 7-day trading)
   formation_days: 21
@@ -51,16 +71,16 @@ strategy:
   kss_critical: -1.92  # KSS 10% critical value
   
   # Capital management
-  capital_per_side: 20000.0  # USDT per leg
-  initial_capital: 20000.0  # Starting capital
-  fee_rate: 0.0005  # 0.05% taker fee on OKX
+  capital_per_side: 10000.0  # USD per leg
+  initial_capital: 100000.0  # Starting capital
+  fee_rate: 0.001  # 0.1% taker fee
 
 # Risk Management (disabled per user request)
 risk:
   enabled: false
   max_drawdown: 0.50  # Not enforced
   daily_loss_limit: 0.20  # Not enforced
-  max_leverage: 5.0  # Not enforced
+  max_leverage: 1.0  # No leverage
 
 # Logging and Monitoring
 logging:
@@ -74,3 +94,4 @@ data:
   buffer_file: data/price_buffer.parquet
   state_file: data/state.json
   model_cache_dir: data/models
+  paper_wallet_file: data/paper_wallet.json

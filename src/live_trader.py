@@ -25,6 +25,7 @@ if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.okx_client import OKXClient
+from src.paper_client import PaperTradingClient
 from src.data_buffer import DataBuffer
 from src.strategy_core import (
     CopulaModel,
@@ -85,20 +86,31 @@ class LiveTrader:
             level="DEBUG",
         )
 
-        # Initialize OKX client
-        api_key = os.getenv("OKX_API_KEY")
-        api_secret = os.getenv("OKX_API_SECRET")
-        passphrase = os.getenv("OKX_PASSPHRASE")
+        # Initialize Client based on mode
+        self.mode = self.config.get("mode", "live")
+        logger.info(f"Initializing LiveTrader in {self.mode.upper()} mode")
 
-        if not api_key or not api_secret or not passphrase:
-            raise ValueError("OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE must be set in .env file")
+        if self.mode == "paper":
+            self.client = PaperTradingClient(
+                initial_capital=self.config["paper"].get("initial_capital", 100000.0),
+                transaction_fee=self.config["paper"].get("transaction_fee", 0.001),
+                state_file=self.config["data"].get("paper_wallet_file", "data/paper_wallet.json")
+            )
+        else:
+            # Initialize OKX client for live trading
+            api_key = os.getenv("OKX_API_KEY")
+            api_secret = os.getenv("OKX_API_SECRET")
+            passphrase = os.getenv("OKX_PASSPHRASE")
 
-        self.client = OKXClient(
-            api_key=api_key,
-            api_secret=api_secret,
-            passphrase=passphrase,
-            demo=self.config["okx"]["demo"],
-        )
+            if not api_key or not api_secret or not passphrase:
+                raise ValueError("OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE must be set in .env file for LIVE trading")
+
+            self.client = OKXClient(
+                api_key=api_key,
+                api_secret=api_secret,
+                passphrase=passphrase,
+                demo=self.config["okx"]["demo"],
+            )
 
         # Initialize data buffer
         all_symbols = [self.config["strategy"]["reference_symbol"]] + self.config["strategy"]["symbols"]
