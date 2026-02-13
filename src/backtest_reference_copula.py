@@ -37,9 +37,9 @@ class Trade:
 class BacktestConfig:
     reference_symbol: str = "SPY"  # "SPY" for stocks, "BTCUSDT" for crypto
     interval: str = "1h"
-    formation_hours: int = 21 * 24
-    trading_hours: int = 7 * 24
-    step_hours: int = 7 * 24
+    formation_days: float = 21.0
+    trading_days: float = 7.0
+    step_days: float = 7.0
     # EG can be too restrictive in short rolling windows; allow disabling by setting to 1.0.
     eg_alpha: float = 1.00
     adf_alpha: float = 0.10
@@ -130,13 +130,16 @@ def position_sizes(beta1: float, beta2: float, p1: float, p2: float, capital_per
     return float(q1), float(q2)
 
 
-def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tuple[list[Trade], dict, pd.Series]:
-    idx = prices.index
-    formation_slice = slice(start_idx, start_idx + cfg.formation_hours)
-    trading_slice = slice(start_idx + cfg.formation_hours, start_idx + cfg.formation_hours + cfg.trading_hours)
+def run_cycle(prices: pd.DataFrame, start_ts: pd.Timestamp, cfg: BacktestConfig) -> tuple[list[Trade], dict, pd.Series]:
+    formation_end = start_ts + pd.Timedelta(days=cfg.formation_days)
+    trading_end = formation_end + pd.Timedelta(days=cfg.trading_days)
 
-    formation = prices.iloc[formation_slice].dropna(how="any")
-    trading = prices.iloc[trading_slice].dropna(how="any")
+    formation = prices.loc[start_ts:formation_end].dropna(how="any")
+    # Exclude the shared boundary bar to prevent overlap
+    trading = prices.loc[formation_end:trading_end]
+    if not trading.empty and trading.index[0] <= formation_end:
+        trading = trading.iloc[1:]
+    trading = trading.dropna(how="any")
 
     if formation.empty or trading.empty:
         return [], {"skipped": True, "reason": "missing_data"}, pd.Series(dtype=float)
@@ -228,7 +231,8 @@ def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tupl
                 short_sym = sym1
                 notional = abs(qty_long * p2) + abs(qty_short * p1)
                 fees = cfg.fee_rate * notional
-                pos = (long_sym, short_sym, qty_long, qty_short, p2, p1, t, fees)
+                # side=1: long_s1_short_s2 (entered with h1_2 low, h2_1 high)
+                pos = (long_sym, short_sym, qty_long, qty_short, p2, p1, t, fees, 1)
                 realized -= fees
             elif open_short_s1_long_s2:
                 # Table 4: short beta2*P2 and long beta1*P1
@@ -239,13 +243,23 @@ def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tupl
                 short_sym = sym2
                 notional = abs(qty_long * p1) + abs(qty_short * p2)
                 fees = cfg.fee_rate * notional
-                pos = (long_sym, short_sym, qty_long, qty_short, p1, p2, t, fees)
+                # side=-1: short_s1_long_s2 (entered with h1_2 high, h2_1 low)
+                pos = (long_sym, short_sym, qty_long, qty_short, p1, p2, t, fees, -1)
                 realized -= fees
             else:
                 equity_points.append((t, realized))
                 continue
         else:
-            long_sym, short_sym, qty_long, qty_short, entry_price_long, entry_price_short, entry_time, fees_paid = pos
+            long_sym, short_sym, qty_long, qty_short, entry_p_long, entry_p_short, entry_t, fees_paid, side = pos
+
+            # Handle price 'snaps' by checking if we've reached or overshot the exit target
+            if side == 1:
+                # Entered when h1_2 < alpha1 and h2_1 > 1-alpha1
+                # Exit when they revert towards 0.5 (or snap past it)
+                close_signal = (h1_2 >= 0.5 - cfg.alpha2) and (h2_1 <= 0.5 + cfg.alpha2)
+            else:
+                # Entered when h1_2 > 1-alpha1 and h2_1 < alpha1
+                close_signal = (h1_2 <= 0.5 + cfg.alpha2) and (h2_1 >= 0.5 - cfg.alpha2)
 
             if close_signal:
                 # Close at current prices
@@ -254,8 +268,8 @@ def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tupl
                 notional = abs(qty_long * px_long) + abs(qty_short * px_short)
                 fees = fees_paid + cfg.fee_rate * notional
 
-                pnl_long = qty_long * (px_long - entry_price_long)
-                pnl_short = qty_short * (px_short - entry_price_short)
+                pnl_long = qty_long * (px_long - entry_p_long)
+                pnl_short = qty_short * (px_short - entry_p_short)
                 pnl = pnl_long + pnl_short - fees
 
                 # Realize PnL and remove any previously accounted entry fee
@@ -288,7 +302,7 @@ def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tupl
 
     # Force-close at end of trading window, per paper.
     if pos is not None:
-        long_sym, short_sym, qty_long, qty_short, entry_price_long, entry_price_short, entry_time, fees_paid = pos
+        long_sym, short_sym, qty_long, qty_short, entry_p_long, entry_p_short, entry_t, fees_paid, side = pos
         last_t = trading.index[-1]
         last_row = trading.iloc[-1]
         px_long = float(last_row[long_sym])
@@ -296,22 +310,22 @@ def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tupl
         notional = abs(qty_long * px_long) + abs(qty_short * px_short)
         fees = fees_paid + cfg.fee_rate * notional
 
-        pnl_long = qty_long * (px_long - entry_price_long)
-        pnl_short = qty_short * (px_short - entry_price_short)
+        pnl_long = qty_long * (px_long - entry_p_long)
+        pnl_short = qty_short * (px_short - entry_p_short)
         pnl = pnl_long + pnl_short - fees
 
         realized += pnl
 
         trades.append(
             Trade(
-                entry_time=entry_time,
+                entry_time=entry_t,
                 exit_time=last_t,
                 symbol_long=long_sym,
                 symbol_short=short_sym,
                 qty_long=qty_long,
                 qty_short=qty_short,
-                entry_price_long=entry_price_long,
-                entry_price_short=entry_price_short,
+                entry_price_long=entry_p_long,
+                entry_price_short=entry_p_short,
                 exit_price_long=px_long,
                 exit_price_short=px_short,
                 fees=fees,
@@ -360,19 +374,24 @@ def performance_summary(trades: list[Trade], equity_pnl: pd.Series, cfg: Backtes
     equity = cfg.initial_capital + equity_pnl.astype(float)
     rets = equity.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
 
-    # Annualization for hourly returns
-    periods_per_year = 365.0 * 24.0
+    # Annualization: use actual time duration to handle stock market gaps correctly
+    n_days = (equity.index[-1] - equity.index[0]).total_seconds() / 86400.0
+    years = n_days / 365.25
 
     total_return = float(equity.iloc[-1] / equity.iloc[0] - 1.0)
 
-    # CAGR based annual return (more stable than compounding mean hourly return)
-    n_periods = max(1, int(len(equity) - 1))
-    annual_return = float((equity.iloc[-1] / equity.iloc[0]) ** (periods_per_year / n_periods) - 1.0)
-
-    mean_r = float(rets.mean()) if len(rets) else 0.0
-    vol_r = float(rets.std(ddof=1)) if len(rets) > 1 else 0.0
-    annual_vol = float(vol_r * np.sqrt(periods_per_year)) if vol_r > 0 else float("nan")
-    sharpe = float((mean_r / vol_r) * np.sqrt(periods_per_year)) if vol_r > 0 else float("nan")
+    if years > 0:
+        annual_return = float((equity.iloc[-1] / equity.iloc[0]) ** (1.0 / years) - 1.0)
+        # Estimate period frequency (bars per year) from the data itself
+        est_periods_per_year = len(equity) / years
+        mean_r = float(rets.mean()) if len(rets) else 0.0
+        vol_r = float(rets.std(ddof=1)) if len(rets) > 1 else 0.0
+        annual_vol = float(vol_r * np.sqrt(est_periods_per_year)) if vol_r > 0 else float("nan")
+        sharpe = float((annual_return) / annual_vol) if (annual_vol > 0 and not np.isnan(annual_vol)) else float("nan")
+    else:
+        annual_return = 0.0
+        annual_vol = float("nan")
+        sharpe = float("nan")
 
     # Max drawdown on equity
     eq = equity.to_numpy(dtype=float)
@@ -399,9 +418,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Reference-asset-based copula pairs backtest")
     p.add_argument("--data", required=True, help="Directory with *_1h.csv files")
     p.add_argument("--interval", default="1h")
-    p.add_argument("--formation-hours", type=int, default=21 * 24)
-    p.add_argument("--trading-hours", type=int, default=7 * 24)
-    p.add_argument("--step-hours", type=int, default=7 * 24)
+    p.add_argument("--formation-days", type=float, default=21.0)
+    p.add_argument("--trading-days", type=float, default=7.0)
+    p.add_argument("--step-days", type=float, default=7.0)
     p.add_argument("--alpha1", type=float, default=0.20)
     p.add_argument("--alpha2", type=float, default=0.10)
     p.add_argument("--eg-alpha", type=float, default=1.00, help="Engle–Granger p-value threshold (set 1.0 to disable)")
@@ -425,9 +444,9 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = BacktestConfig(
         interval=args.interval,
-        formation_hours=args.formation_hours,
-        trading_hours=args.trading_hours,
-        step_hours=args.step_hours,
+        formation_days=args.formation_days,
+        trading_days=args.trading_days,
+        step_days=args.step_days,
         alpha1=args.alpha1,
         alpha2=args.alpha2,
         eg_alpha=args.eg_alpha,
@@ -456,8 +475,8 @@ def main(argv: list[str] | None = None) -> int:
         # Cointegration/spread modeling is typically done in log-price space.
         closes = np.log(closes.astype(float))
 
-    total_window = cfg.formation_hours + cfg.trading_hours
-    if len(closes) < total_window:
+    total_duration = cfg.formation_days + cfg.trading_days
+    if (closes.index[-1] - closes.index[0]) < pd.Timedelta(days=total_duration):
         raise ValueError("Not enough data for a single formation+trading window")
 
     all_trades: list[Trade] = []
@@ -466,9 +485,9 @@ def main(argv: list[str] | None = None) -> int:
 
     cumulative_pnl = 0.0
 
-    i = 0
-    while i + total_window <= len(closes):
-        trades, meta, equity = run_cycle(closes, i, cfg)
+    curr_ts = closes.index[0]
+    while curr_ts + pd.Timedelta(days=cfg.formation_days + cfg.trading_days) <= closes.index[-1]:
+        trades, meta, equity = run_cycle(closes, curr_ts, cfg)
         cycle_metas.append(meta)
         all_trades.extend(trades)
 
@@ -477,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
             equity = equity + cumulative_pnl
             cumulative_pnl = float(equity.iloc[-1])
         equity_curves.append(equity)
-        i += cfg.step_hours
+        curr_ts += pd.Timedelta(days=cfg.step_days)
 
     equity_pnl = pd.concat(equity_curves).sort_index()
     # Trading windows are non-overlapping; if there are duplicates, keep last.
