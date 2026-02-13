@@ -152,27 +152,40 @@ class LiveTrader:
             self.buffer.load(buffer_file)
             logger.info("Loaded existing buffer")
 
-        # Check if we need more data
+        # Check each symbol individually
         required_days = self.config["strategy"]["formation_days"] + 1
+        
+        for symbol in self.buffer.symbols:
+            # Check if symbol already has enough data
+            if symbol in self.buffer.data and not self.buffer.data[symbol].empty:
+                df_sym = self.buffer.data[symbol]
+                earliest = df_sym["timestamp"].min()
+                latest = df_sym["timestamp"].max()
+                days_available = (latest - earliest).total_seconds() / (24 * 3600)
+                
+                if days_available >= required_days:
+                    logger.info(f"Symbol {symbol} already has {days_available:.1f} days of data, skipping download.")
+                    continue
 
-        if not self.buffer.is_ready(required_days):
-            logger.info(f"Downloading {required_days} days of historical data...")
-
-            for symbol in self.buffer.symbols:
-                try:
-                    df = self.client.get_all_klines(
-                        symbol=symbol,
-                        interval=self.config["strategy"]["interval"],
-                        days=required_days,
-                    )
+            logger.info(f"Downloading {required_days} days of historical data for {symbol}...")
+            try:
+                df = self.client.get_all_klines(
+                    symbol=symbol,
+                    interval=self.config["strategy"]["interval"],
+                    days=required_days,
+                )
+                if not df.empty:
                     self.buffer.update(symbol, df)
                     logger.info(f"Downloaded {len(df)} candles for {symbol}")
-                    time.sleep(0.2)  # Rate limit
-                except Exception as e:
-                    logger.error(f"Failed to download {symbol}: {e}")
+                else:
+                    logger.warning(f"No data returned for {symbol}")
+                
+                time.sleep(1.0)  # Increase delay to avoid rate limiting
+            except Exception as e:
+                logger.error(f"Failed to download {symbol}: {e}")
 
-            # Save buffer
-            self.buffer.save(buffer_file)
+        # Save buffer
+        self.buffer.save(buffer_file)
 
         earliest, latest = self.buffer.get_data_range()
         logger.info(f"Data range: {earliest} to {latest}")
@@ -188,11 +201,36 @@ class LiveTrader:
                     limit=10,
                 )
                 self.buffer.update(symbol, df)
+                time.sleep(0.2)
             except Exception as e:
                 logger.error(f"Failed to update {symbol}: {e}")
 
+    def _validate_state(self) -> bool:
+        """Validate that current state is consistent with config.
+        
+        Returns:
+            True if valid, False if state needs reset
+        """
+        if self.state.current_pair is None:
+            return True  # No pair yet, valid
+        
+        # Check if pair symbols are in current config
+        pair_symbols = {self.state.current_pair["symbol1"], self.state.current_pair["symbol2"]}
+        config_symbols = set(self.buffer.symbols)
+        
+        if not pair_symbols.issubset(config_symbols):
+            logger.warning(f"State contains pair with symbols {pair_symbols} not in current config")
+            logger.warning("This likely means config changed. Resetting state.")
+            return False
+        
+        return True
+
     def should_start_new_cycle(self) -> bool:
         """Check if we should start a new formation period."""
+        # First check if state is valid
+        if not self._validate_state():
+            return True  # Force new cycle to reset state
+        
         if self.state.trading_end is None:
             return True  # First cycle
 
@@ -233,13 +271,22 @@ class LiveTrader:
         formation_prices = np.log(formation_prices.astype(float))
 
         # Select trading pair
-        pair = select_trading_pair(
+        pair, results_df = select_trading_pair(
             formation_prices,
             reference_symbol=self.config["strategy"]["reference_symbol"],
             eg_alpha=self.config["strategy"]["eg_alpha"],
             adf_alpha=self.config["strategy"]["adf_alpha"],
             kss_critical=self.config["strategy"]["kss_critical"],
         )
+
+        # Write down detected pairs
+        if not results_df.empty:
+            report_dir = Path(self.config["data"].get("report_dir", "reports"))
+            report_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            report_path = report_dir / f"cointegrated_pairs_{timestamp}.csv"
+            results_df.to_csv(report_path, index=False)
+            logger.info(f"Saved {len(results_df)} cointegrated pairs to {report_path}")
 
         if pair is None:
             logger.warning("No suitable pair found")

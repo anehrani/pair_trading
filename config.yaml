@@ -95,3 +95,4 @@ data:
   state_file: data/state.json
   model_cache_dir: data/models
   paper_wallet_file: data/paper_wallet.json
+  report_dir: reports

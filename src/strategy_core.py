@@ -67,7 +67,7 @@ def select_trading_pair(
     eg_alpha: float = 1.00,
     adf_alpha: float = 0.10,
     kss_critical: float = -1.92,
-) -> TradingPair | None:
+) -> tuple[TradingPair | None, pd.DataFrame]:
     """Select top 2 altcoins cointegrated with reference asset.
 
     Args:
@@ -78,16 +78,16 @@ def select_trading_pair(
         kss_critical: KSS critical value
 
     Returns:
-        TradingPair if found, None otherwise
+        (TradingPair or None, DataFrame of all results)
     """
     if reference_symbol not in prices.columns:
         logger.error(f"Reference symbol {reference_symbol} not in prices")
-        return None
+        return None, pd.DataFrame()
 
     ref = prices[reference_symbol].dropna()
     candidates = [c for c in prices.columns if c != reference_symbol]
 
-    stats_rows: list[tuple[str, float, float]] = []  # (symbol, tau, beta)
+    stats_rows: list[dict] = []
 
     for sym in candidates:
         # Test cointegration
@@ -108,27 +108,57 @@ def select_trading_pair(
         if not np.isfinite(tau):
             continue
 
-        stats_rows.append((sym, tau, res.beta))
+        # Calculate score: abs(kss)/10 + (eg + adf)/2
+        score = abs(res.kss_stat) / 10.0 + (res.eg_pvalue + res.adf_pvalue) / 2.0
+
+        stats_rows.append({
+            "reference": reference_symbol,
+            "asset": sym,
+            "beta": res.beta,
+            "eg_pvalue": res.eg_pvalue,
+            "adf_pvalue": res.adf_pvalue,
+            "kss_stat": res.kss_stat,
+            "observations": len(res.spread),
+            "score": score,
+            "tau": tau,  # Still need tau for sorting
+        })
+
+    if not stats_rows:
+        logger.warning("No cointegrated pairs found")
+        return None, pd.DataFrame()
+
+    results_df = pd.DataFrame(stats_rows)
 
     if len(stats_rows) < 2:
         logger.warning(f"Only {len(stats_rows)} cointegrated pairs found, need at least 2")
-        return None
+        return None, results_df.drop(columns=["tau"])
 
     # Sort by tau (descending) and pick top 2
-    stats_rows.sort(key=lambda r: r[1], reverse=True)
-    s1, tau1, beta1 = stats_rows[0]
-    s2, tau2, beta2 = stats_rows[1]
+    results_df = results_df.sort_values("tau", ascending=False)
+    
+    s1 = results_df.iloc[0]["asset"]
+    tau1 = results_df.iloc[0]["tau"]
+    beta1 = results_df.iloc[0]["beta"]
+    
+    s2 = results_df.iloc[1]["asset"]
+    tau2 = results_df.iloc[1]["tau"]
+    beta2 = results_df.iloc[1]["beta"]
 
     logger.info(f"Selected pair: {s1} (τ={tau1:.3f}, β={beta1:.3f}), {s2} (τ={tau2:.3f}, β={beta2:.3f})")
 
-    return TradingPair(
-        symbol1=s1,
-        symbol2=s2,
-        beta1=beta1,
-        beta2=beta2,
-        tau1=tau1,
-        tau2=tau2,
+    pair = TradingPair(
+        symbol1=str(s1),
+        symbol2=str(s2),
+        beta1=float(beta1),
+        beta2=float(beta2),
+        tau1=float(tau1),
+        tau2=float(tau2),
     )
+    
+    # Drop tau before returning for reporting
+    report_df = results_df.drop(columns=["tau"]).sort_values("score", ascending=True)
+    
+    return pair, report_df
 
 
 def fit_copula_model(

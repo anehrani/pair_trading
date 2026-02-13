@@ -102,51 +102,70 @@ class PaperTradingClient:
             days: Number of lookback days.
             
         Returns:
-            DataFrame with columns: [ts, open, high, low, close, vol]
-            Index is DatetimeIndex.
+            DataFrame with columns: [timestamp, open, high, low, close, volume]
         """
-        # Map interval to yfinance format if needed
         yf_interval = interval
         if interval == "1M": yf_interval = "1mo"
         
-        # Calculate start date
         start_date = datetime.now() - timedelta(days=days)
-        
         logger.info(f"Fetching {days} days of {interval} data for {symbol} from Yahoo...")
         
-        try:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(start=start_date, interval=yf_interval)
-            
-            if df.empty:
-                logger.warning(f"No data returned for {symbol}")
-                return pd.DataFrame()
-            
-            # Standardize columns
-            df = df.rename(columns={
-                "Open": "open",
-                "High": "high",
-                "Low": "low",
-                "Close": "close",
-                "Volume": "volume"
-            })
-            
-            # Ensure index is timezone-aware UTC
-            if df.index.tz is None:
-                df.index = df.index.tz_localize("UTC")
-            else:
-                df.index = df.index.tz_convert("UTC")
-            
-            # Reset index to get timestamp column
-            df = df.reset_index()
-            # Rename index col (Date or Datetime) to timestamp
-            df = df.rename(columns={df.columns[0]: "timestamp"})
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Use download for potentially more robust fetching than ticker.history
+                df = yf.download(
+                    tickers=symbol,
+                    start=start_date,
+                    interval=yf_interval,
+                    progress=False,
+                    threads=False,
+                    group_by='ticker'
+                )
                 
-            return df[["timestamp", "open", "high", "low", "close", "volume"]]
+                if df.empty:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Attempt {attempt+1} failed for {symbol}, retrying...")
+                        import time
+                        time.sleep(2)
+                        continue
+                    logger.warning(f"No data returned for {symbol} after {max_retries} attempts")
+                    return pd.DataFrame()
+                
+                # Standardize columns (yf.download with single ticker might have MultiIndex or simple columns)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(1)
+                
+                df = df.rename(columns={
+                    "Open": "open",
+                    "High": "high",
+                    "Low": "low",
+                    "Close": "close",
+                    "Volume": "volume"
+                })
+                
+                # Ensure index is timezone-aware UTC
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize("UTC")
+                else:
+                    df.index = df.index.tz_convert("UTC")
+                
+                # Reset index to get timestamp column
+                df = df.reset_index()
+                # Rename first column to timestamp
+                df = df.rename(columns={df.columns[0]: "timestamp"})
+                    
+                return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
-        except Exception as e:
-            logger.error(f"Failed to fetch history for {symbol}: {e}")
-            raise
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Attempt {attempt+1} for {symbol} failed with: {e}. Retrying...")
+                    import time
+                    time.sleep(2)
+                else:
+                    logger.error(f"Failed to fetch history for {symbol} after {max_retries} attempts: {e}")
+                    return pd.DataFrame()
+        return pd.DataFrame()
 
     def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
         """
