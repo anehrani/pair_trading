@@ -35,7 +35,7 @@ class Trade:
 
 @dataclass
 class BacktestConfig:
-    reference_symbol: str = "BTCUSDT"
+    reference_symbol: str = "SPY"  # "SPY" for stocks, "BTCUSDT" for crypto
     interval: str = "1h"
     formation_hours: int = 21 * 24
     trading_hours: int = 7 * 24

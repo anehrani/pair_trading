@@ -72,7 +72,7 @@ def select_trading_pair(
 
     Args:
         prices: DataFrame with timestamp index and symbol columns
-        reference_symbol: Reference asset (e.g., "BTCUSDT")
+        reference_symbol: Reference asset (e.g., "BTCUSDT" for crypto or "SPY" for stocks)
         eg_alpha: Engle-Granger p-value threshold
         adf_alpha: ADF p-value threshold
         kss_critical: KSS critical value

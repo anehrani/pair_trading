@@ -56,7 +56,7 @@ def verify_paper_trading():
         print(f"   ✓ Buffer initialized with {len(symbols)} symbols")
         
         # Check specific symbol data
-        ref_sym = trader.config["strategy"]["reference_symbol"]
+        ref_sym = trader.reference_symbol
         df = trader.buffer.data.get(ref_sym)
         if df is not None and not df.empty:
             print(f"   ✓ Data found for {ref_sym}: {len(df)} candles")

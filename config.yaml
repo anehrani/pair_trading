@@ -1,7 +1,13 @@
 # Live Trading Configuration for Copula-Based Pair Trading
 
 # Trading Setup
-mode: paper  # 'live' or 'paper'
+mode: alpaca  # 'live', 'paper', or 'alpaca'
+
+# Alpaca Configuration
+alpaca:
+  api_key: ${ALPACA_API_KEY}
+  secret_key: ${ALPACA_SECRET_KEY}
+  base_url: https://paper-api.alpaca.markets
 
 # OKX API Configuration (Used only if mode: live)
 okx:
@@ -31,7 +37,7 @@ strategy:
     - GOOGL
     - META
     - TSLA
-    - BRK-B
+    - BRK.B
     - UNH
     - JNJ
     - JPM
@@ -57,8 +63,8 @@ strategy:
     - COPX  # Copper Miners
   
   # Time windows (paper uses 21-day formation + 7-day trading)
-  formation_days: 21
-  trading_days: 7
+  formation_days: 60
+  trading_days: 5
   interval: 5m  # 5-minute candles
   
   # Trading thresholds (paper's best: α₁=0.20, α₂=0.10)
@@ -84,7 +90,7 @@ risk:
 
 # Logging and Monitoring
 logging:
-  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  level: DEBUG  # DEBUG, INFO, WARNING, ERROR
   log_dir: logs
   trade_log: data/trades.csv
   performance_log: data/performance.csv

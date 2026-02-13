@@ -26,6 +26,7 @@ if __name__ == "__main__":
 
 from src.okx_client import OKXClient
 from src.paper_client import PaperTradingClient
+from src.alpaca_client import AlpacaPaperTrader
 from src.data_buffer import DataBuffer
 from src.strategy_core import (
     CopulaModel,
@@ -96,7 +97,19 @@ class LiveTrader:
                 transaction_fee=self.config["paper"].get("transaction_fee", 0.001),
                 state_file=self.config["data"].get("paper_wallet_file", "data/paper_wallet.json")
             )
+        elif self.mode == "alpaca":
+            alpaca_conf = self.config.get("alpaca", {})
+            api_key = os.getenv("ALPACA_API_KEY") or alpaca_conf.get("api_key")
+            secret_key = os.getenv("ALPACA_SECRET_KEY") or alpaca_conf.get("secret_key")
+
+            if not api_key or not secret_key:
+                raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env or config for Alpaca trading")
+                
+            alpaca_url = alpaca_conf.get("base_url")
+            self.client = AlpacaPaperTrader(api_key, secret_key, url_override=alpaca_url)
+            logger.info(f"Initialized Alpaca client (URL: {alpaca_url or 'default'})")
         else:
+
             # Initialize OKX client for live trading
             api_key = os.getenv("OKX_API_KEY")
             api_secret = os.getenv("OKX_API_SECRET")
@@ -112,9 +125,19 @@ class LiveTrader:
                 demo=self.config["okx"]["demo"],
             )
 
+        # Get strategy config
+        strategy_conf = self.config.get("strategy", {})
+        
+        # Determine default reference symbol based on mode
+        # Alpaca is for stocks (SPY), OKX/Paper is for crypto (BTCUSDT)
+        default_ref = "SPY" if self.mode == "alpaca" else "BTCUSDT"
+        
+        self.reference_symbol = strategy_conf.get("reference_symbol", default_ref)
+        self.symbols = strategy_conf.get("symbols", [])
+
         # Initialize data buffer
-        all_symbols = [self.config["strategy"]["reference_symbol"]] + self.config["strategy"]["symbols"]
-        self.buffer = DataBuffer(symbols=all_symbols, max_days=self.config["strategy"]["formation_days"] + 7)
+        all_symbols = [self.reference_symbol] + self.symbols
+        self.buffer = DataBuffer(symbols=all_symbols, max_days=strategy_conf.get("formation_days", 21) + 7)
 
         # Load or initialize state
         self.state_file = Path(self.config["data"]["state_file"])
@@ -273,7 +296,7 @@ class LiveTrader:
         # Select trading pair
         pair, results_df = select_trading_pair(
             formation_prices,
-            reference_symbol=self.config["strategy"]["reference_symbol"],
+            reference_symbol=self.reference_symbol,
             eg_alpha=self.config["strategy"]["eg_alpha"],
             adf_alpha=self.config["strategy"]["adf_alpha"],
             kss_critical=self.config["strategy"]["kss_critical"],
@@ -296,7 +319,7 @@ class LiveTrader:
         model = fit_copula_model(
             formation_prices,
             pair,
-            reference_symbol=self.config["strategy"]["reference_symbol"],
+            reference_symbol=self.reference_symbol,
         )
 
         if model is None:
@@ -327,7 +350,7 @@ class LiveTrader:
         if signal.action == "WAIT":
             return
 
-        ref_sym = self.config["strategy"]["reference_symbol"]
+        ref_sym = self.reference_symbol
         sym1 = self.current_pair.symbol1
         sym2 = self.current_pair.symbol2
 
@@ -433,7 +456,7 @@ class LiveTrader:
                         prices,
                         self.current_model,
                         self.current_pair,
-                        self.config["strategy"]["reference_symbol"],
+                        self.reference_symbol,
                         self.config["strategy"]["alpha1"],
                         self.config["strategy"]["alpha2"],
                     )

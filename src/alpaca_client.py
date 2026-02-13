@@ -1,4 +1,5 @@
 import time
+import os
 from datetime import datetime, timedelta
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
@@ -22,23 +23,29 @@ from alpaca.data.requests import (
     StockBarsRequest,
     StockSnapshotRequest,
 )
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+import pandas as pd
+from loguru import logger
+import math
+
 
 
 class AlpacaPaperTrader:
     """Client for Alpaca Paper Trading."""
 
-    def __init__(self, api_key: str, secret_key: str):
+    def __init__(self, api_key: str, secret_key: str, url_override: str = None):
         """
         Initialize Alpaca Paper Trading client.
 
         Args:
             api_key: Your Alpaca API key
             secret_key: Your Alpaca secret key
+            url_override: Optional custom API URL
         """
-        # paper=True enables paper trading
-        self.trading_client = TradingClient(api_key, secret_key, paper=True)
-        self.data_client = StockHistoricalDataClient(api_key, secret_key)
+        # paper=True enables paper trading, but url_override takes precedence if provided
+        self.trading_client = TradingClient(api_key, secret_key, paper=True, url_override=url_override)
+        self.data_client = StockHistoricalDataClient(api_key, secret_key) 
+
 
         # Verify connection
         self.account = self.trading_client.get_account()
@@ -101,24 +108,115 @@ class AlpacaPaperTrader:
 
     def get_bars(self, symbol: str, days: int = 30, timeframe: TimeFrame = TimeFrame.Day) -> list:
         """Get historical bars for a symbol."""
+        start_time = datetime.now() - timedelta(days=days)
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
             timeframe=timeframe,
-            start=datetime.now() - timedelta(days=days),
+            start=start_time,
+            limit=10000, # Max limit to ensure we get enough data, though pagination might be needed for very long periods
+            feed="iex", # valid for free plan usually
+            sort="asc"
         )
-        bars = self.data_client.get_stock_bars(request)
-        result = []
-        for bar in bars[symbol]:
-            result.append({
-                "timestamp": bar.timestamp,
-                "open": float(bar.open),
-                "high": float(bar.high),
-                "low": float(bar.low),
-                "close": float(bar.close),
-                "volume": bar.volume,
-                "vwap": float(bar.vwap),
-            })
-        return result
+        try:
+            logger.debug(f"Requesting bars for {symbol}: start={start_time}, timeframe={timeframe}")
+            response = self.data_client.get_stock_bars(request)
+            result = []
+            
+            # Accessing from response.data is safer in alpaca-py
+            bars = response.data.get(symbol, [])
+            if bars:
+                for bar in bars:
+                    result.append({
+                        "timestamp": bar.timestamp,
+                        "open": float(bar.open),
+                        "high": float(bar.high),
+                        "low": float(bar.low),
+                        "close": float(bar.close),
+                        "volume": bar.volume,
+                        "vwap": float(bar.vwap) if hasattr(bar, 'vwap') and bar.vwap is not None else 0.0,
+                    })
+                logger.debug(f"Successfully fetched {len(result)} bars for {symbol}")
+            else:
+                logger.warning(f"No bars returned for {symbol} in response")
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching bars for {symbol}: {e}")
+            return []
+
+    # ─────────────────────────────────────────────
+    # LIVE TRADER INTERFACE IMPLEMENTATION
+    # ─────────────────────────────────────────────
+
+    def _get_timeframe_from_interval(self, interval: str) -> TimeFrame:
+        """Convert string interval (e.g. '5m') to Alpaca TimeFrame."""
+        if interval.endswith('m'):
+            return TimeFrame(int(interval[:-1]), TimeFrameUnit.Minute)
+        elif interval.endswith('h') or interval.endswith('H'):
+            return TimeFrame(int(interval[:-1]), TimeFrameUnit.Hour)
+        elif interval.endswith('d') or interval.endswith('D'):
+            return TimeFrame(int(interval[:-1]), TimeFrameUnit.Day)
+        else:
+            return TimeFrame(5, TimeFrameUnit.Minute) # Default
+
+    def get_all_klines(self, symbol: str, interval: str, days: int = 30) -> pd.DataFrame:
+        """
+        Fetch historical klines formatted for LiveTrader.
+        Returns DataFrame with [timestamp, open, high, low, close, volume]
+        """
+        timeframe = self._get_timeframe_from_interval(interval)
+        bars_list = self.get_bars(symbol, days, timeframe)
+        
+        if not bars_list:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(bars_list)
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Ensure timestamp is datetime and timezone aware (UTC)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+        
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
+    def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
+        """
+        Fetch recent klines.
+        Note: Alpaca API uses start/end, not limit directly in basic requests easily without start.
+        We will estimate days based on limit and interval.
+        """
+        # Estimate days needed
+        mins_per_candle = 5
+        if interval.endswith('m'):
+            mins_per_candle = int(interval[:-1])
+        elif interval.endswith('h'):
+            mins_per_candle = int(interval[:-1]) * 60
+        elif interval.endswith('d'):
+            mins_per_candle = 1440
+            
+        total_minutes = limit * mins_per_candle
+        days = math.ceil(total_minutes / (24 * 60)) + 1 # Add buffer
+        
+        return self.get_all_klines(symbol, interval, days).tail(limit)
+
+    def get_account_balance(self) -> dict:
+        """Get account balance in expected format."""
+        acct = self.get_account_info()
+        return {
+            "total": acct['equity'],
+            "available": acct['buying_power'],
+            "used": acct['equity'] - acct['buying_power'] # Rough approximation
+        }
+
+    def place_market_order(self, symbol: str, side: str, qty: float):
+        """Place market order with simple interface."""
+        side = side.lower()
+        if side == "buy":
+            return self.buy_market(symbol, qty)
+        elif side == "sell":
+            return self.sell_market(symbol, qty)
+        else:
+            raise ValueError(f"Invalid side: {side}")
+
 
     def get_snapshot(self, symbol: str) -> dict:
         """Get a full snapshot (quote, latest trade, minute bar, daily bar)."""
@@ -410,13 +508,27 @@ class AlpacaPaperTrader:
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+
 
     # ⚠️ Replace with your actual Alpaca API keys
-    API_KEY = "08D57E8536A7D82F5E1A61A1716A79DD"
-    SECRET_KEY = "Atjq4nVBMn3ZLXtcMnT4D9oaeyRL7Pb8G2vaMxTgoR6i"
+    API_KEY = os.getenv("ALPACA_API_KEY")
+    SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+
+    if not API_KEY or not SECRET_KEY:
+        print("❌ Error: ALPACA_API_KEY or ALPACA_SECRET_KEY not found in environment variables.")
+        exit(1)
 
     # Initialize the client
-    trader = AlpacaPaperTrader(API_KEY, SECRET_KEY)
+    try:
+        trader = AlpacaPaperTrader(API_KEY, SECRET_KEY)
+        print("✅ Successfully connected to Alpaca Paper Trading API")
+    except Exception as e:
+        print(f"\n❌ FAILED to connect to Alpaca API: {e}")
+        print("💡 Please check your ALPACA_API_KEY and ALPACA_SECRET_KEY in the .env file.")
+        print("   They should look like: PK... (Key) and ... (Secret)")
+        exit(1)
 
     # ── Check market status ──
     trader.is_market_open()

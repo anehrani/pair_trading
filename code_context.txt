@@ -1,0 +1,4094 @@
+src/__init__.py
+---
+
+
+---
+src/alpaca_client.py
+---
+import time
+import os
+from datetime import datetime, timedelta
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import (
+    MarketOrderRequest,
+    LimitOrderRequest,
+    StopOrderRequest,
+    StopLimitOrderRequest,
+    TrailingStopOrderRequest,
+    GetOrdersRequest,
+    ClosePositionRequest,
+)
+from alpaca.trading.enums import (
+    OrderSide,
+    TimeInForce,
+    OrderStatus,
+    QueryOrderStatus,
+)
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import (
+    StockLatestQuoteRequest,
+    StockBarsRequest,
+    StockSnapshotRequest,
+)
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+import pandas as pd
+from loguru import logger
+import math
+
+
+
+class AlpacaPaperTrader:
+    """Client for Alpaca Paper Trading."""
+
+    def __init__(self, api_key: str, secret_key: str, url_override: str = None):
+        """
+        Initialize Alpaca Paper Trading client.
+
+        Args:
+            api_key: Your Alpaca API key
+            secret_key: Your Alpaca secret key
+            url_override: Optional custom API URL
+        """
+        # paper=True enables paper trading, but url_override takes precedence if provided
+        self.trading_client = TradingClient(api_key, secret_key, paper=True, url_override=url_override)
+        self.data_client = StockHistoricalDataClient(api_key, secret_key) 
+
+
+        # Verify connection
+        self.account = self.trading_client.get_account()
+        print(f"✅ Connected to Alpaca Paper Trading")
+        print(f"   Account ID: {self.account.id}")
+        print(f"   Cash: ${float(self.account.cash):,.2f}")
+        print(f"   Portfolio Value: ${float(self.account.portfolio_value):,.2f}")
+        print(f"   Buying Power: ${float(self.account.buying_power):,.2f}")
+        print(f"   Day Trade Count: {self.account.daytrade_count}")
+
+    # ─────────────────────────────────────────────
+    # ACCOUNT INFO
+    # ─────────────────────────────────────────────
+
+    def get_account_info(self) -> dict:
+        """Get full account information."""
+        account = self.trading_client.get_account()
+        return {
+            "id": account.id,
+            "status": account.status,
+            "cash": float(account.cash),
+            "buying_power": float(account.buying_power),
+            "portfolio_value": float(account.portfolio_value),
+            "equity": float(account.equity),
+            "long_market_value": float(account.long_market_value),
+            "short_market_value": float(account.short_market_value),
+            "initial_margin": float(account.initial_margin),
+            "maintenance_margin": float(account.maintenance_margin),
+            "daytrade_count": account.daytrade_count,
+            "pattern_day_trader": account.pattern_day_trader,
+            "trading_blocked": account.trading_blocked,
+            "account_blocked": account.account_blocked,
+        }
+
+    def is_market_open(self) -> bool:
+        """Check if the market is currently open."""
+        clock = self.trading_client.get_clock()
+        print(f"   Market is {'OPEN' if clock.is_open else 'CLOSED'}")
+        print(f"   Next open:  {clock.next_open}")
+        print(f"   Next close: {clock.next_close}")
+        return clock.is_open
+
+    # ─────────────────────────────────────────────
+    # MARKET DATA
+    # ─────────────────────────────────────────────
+
+    def get_latest_quote(self, symbol: str) -> dict:
+        """Get the latest quote for a symbol."""
+        request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+        quote = self.data_client.get_stock_latest_quote(request)
+        q = quote[symbol]
+        return {
+            "symbol": symbol,
+            "ask_price": float(q.ask_price),
+            "ask_size": q.ask_size,
+            "bid_price": float(q.bid_price),
+            "bid_size": q.bid_size,
+            "timestamp": q.timestamp,
+        }
+
+    def get_bars(self, symbol: str, days: int = 30, timeframe: TimeFrame = TimeFrame.Day) -> list:
+        """Get historical bars for a symbol."""
+        start_time = datetime.now() - timedelta(days=days)
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=timeframe,
+            start=start_time,
+            limit=10000, # Max limit to ensure we get enough data, though pagination might be needed for very long periods
+            feed="iex", # valid for free plan usually
+            sort="asc"
+        )
+        try:
+            logger.debug(f"Requesting bars for {symbol}: start={start_time}, timeframe={timeframe}")
+            response = self.data_client.get_stock_bars(request)
+            result = []
+            
+            # Accessing from response.data is safer in alpaca-py
+            bars = response.data.get(symbol, [])
+            if bars:
+                for bar in bars:
+                    result.append({
+                        "timestamp": bar.timestamp,
+                        "open": float(bar.open),
+                        "high": float(bar.high),
+                        "low": float(bar.low),
+                        "close": float(bar.close),
+                        "volume": bar.volume,
+                        "vwap": float(bar.vwap) if hasattr(bar, 'vwap') and bar.vwap is not None else 0.0,
+                    })
+                logger.debug(f"Successfully fetched {len(result)} bars for {symbol}")
+            else:
+                logger.warning(f"No bars returned for {symbol} in response")
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching bars for {symbol}: {e}")
+            return []
+
+    # ─────────────────────────────────────────────
+    # LIVE TRADER INTERFACE IMPLEMENTATION
+    # ─────────────────────────────────────────────
+
+    def _get_timeframe_from_interval(self, interval: str) -> TimeFrame:
+        """Convert string interval (e.g. '5m') to Alpaca TimeFrame."""
+        if interval.endswith('m'):
+            return TimeFrame(int(interval[:-1]), TimeFrameUnit.Minute)
+        elif interval.endswith('h') or interval.endswith('H'):
+            return TimeFrame(int(interval[:-1]), TimeFrameUnit.Hour)
+        elif interval.endswith('d') or interval.endswith('D'):
+            return TimeFrame(int(interval[:-1]), TimeFrameUnit.Day)
+        else:
+            return TimeFrame(5, TimeFrameUnit.Minute) # Default
+
+    def get_all_klines(self, symbol: str, interval: str, days: int = 30) -> pd.DataFrame:
+        """
+        Fetch historical klines formatted for LiveTrader.
+        Returns DataFrame with [timestamp, open, high, low, close, volume]
+        """
+        timeframe = self._get_timeframe_from_interval(interval)
+        bars_list = self.get_bars(symbol, days, timeframe)
+        
+        if not bars_list:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(bars_list)
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Ensure timestamp is datetime and timezone aware (UTC)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+        
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
+    def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
+        """
+        Fetch recent klines.
+        Note: Alpaca API uses start/end, not limit directly in basic requests easily without start.
+        We will estimate days based on limit and interval.
+        """
+        # Estimate days needed
+        mins_per_candle = 5
+        if interval.endswith('m'):
+            mins_per_candle = int(interval[:-1])
+        elif interval.endswith('h'):
+            mins_per_candle = int(interval[:-1]) * 60
+        elif interval.endswith('d'):
+            mins_per_candle = 1440
+            
+        total_minutes = limit * mins_per_candle
+        days = math.ceil(total_minutes / (24 * 60)) + 1 # Add buffer
+        
+        return self.get_all_klines(symbol, interval, days).tail(limit)
+
+    def get_account_balance(self) -> dict:
+        """Get account balance in expected format."""
+        acct = self.get_account_info()
+        return {
+            "total": acct['equity'],
+            "available": acct['buying_power'],
+            "used": acct['equity'] - acct['buying_power'] # Rough approximation
+        }
+
+    def place_market_order(self, symbol: str, side: str, qty: float):
+        """Place market order with simple interface."""
+        side = side.lower()
+        if side == "buy":
+            return self.buy_market(symbol, qty)
+        elif side == "sell":
+            return self.sell_market(symbol, qty)
+        else:
+            raise ValueError(f"Invalid side: {side}")
+
+
+    def get_snapshot(self, symbol: str) -> dict:
+        """Get a full snapshot (quote, latest trade, minute bar, daily bar)."""
+        request = StockSnapshotRequest(symbol_or_symbols=symbol)
+        snapshot = self.data_client.get_stock_snapshot(request)
+        s = snapshot[symbol]
+        return {
+            "symbol": symbol,
+            "latest_trade": {
+                "price": float(s.latest_trade.price),
+                "size": s.latest_trade.size,
+                "timestamp": s.latest_trade.timestamp,
+            },
+            "latest_quote": {
+                "ask": float(s.latest_quote.ask_price),
+                "bid": float(s.latest_quote.bid_price),
+            },
+            "minute_bar": {
+                "open": float(s.minute_bar.open),
+                "high": float(s.minute_bar.high),
+                "low": float(s.minute_bar.low),
+                "close": float(s.minute_bar.close),
+                "volume": s.minute_bar.volume,
+            },
+            "daily_bar": {
+                "open": float(s.daily_bar.open),
+                "high": float(s.daily_bar.high),
+                "low": float(s.daily_bar.low),
+                "close": float(s.daily_bar.close),
+                "volume": s.daily_bar.volume,
+            },
+        }
+
+    # ─────────────────────────────────────────────
+    # ORDER PLACEMENT
+    # ─────────────────────────────────────────────
+
+    def buy_market(self, symbol: str, qty: float, time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a market buy order."""
+        order_data = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=time_in_force,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Market BUY order submitted: {qty} shares of {symbol}")
+        print(f"   Order ID: {order.id} | Status: {order.status}")
+        return order
+
+    def sell_market(self, symbol: str, qty: float, time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a market sell order."""
+        order_data = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=time_in_force,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Market SELL order submitted: {qty} shares of {symbol}")
+        print(f"   Order ID: {order.id} | Status: {order.status}")
+        return order
+
+    def buy_limit(self, symbol: str, qty: float, limit_price: float,
+                  time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a limit buy order."""
+        order_data = LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=time_in_force,
+            limit_price=limit_price,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Limit BUY order submitted: {qty} shares of {symbol} @ ${limit_price}")
+        print(f"   Order ID: {order.id} | Status: {order.status}")
+        return order
+
+    def sell_limit(self, symbol: str, qty: float, limit_price: float,
+                   time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a limit sell order."""
+        order_data = LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=time_in_force,
+            limit_price=limit_price,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Limit SELL order submitted: {qty} shares of {symbol} @ ${limit_price}")
+        print(f"   Order ID: {order.id} | Status: {order.status}")
+        return order
+
+    def buy_stop(self, symbol: str, qty: float, stop_price: float,
+                 time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a stop buy order."""
+        order_data = StopOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=time_in_force,
+            stop_price=stop_price,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Stop BUY order submitted: {qty} shares of {symbol} @ stop ${stop_price}")
+        return order
+
+    def sell_stop_limit(self, symbol: str, qty: float, stop_price: float,
+                        limit_price: float, time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a stop-limit sell order (useful for stop-loss with limit)."""
+        order_data = StopLimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=time_in_force,
+            stop_price=stop_price,
+            limit_price=limit_price,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Stop-Limit SELL: {qty} {symbol} | Stop: ${stop_price} | Limit: ${limit_price}")
+        return order
+
+    def buy_trailing_stop(self, symbol: str, qty: float, trail_percent: float,
+                          time_in_force: TimeInForce = TimeInForce.DAY):
+        """Place a trailing stop buy order."""
+        order_data = TrailingStopOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=time_in_force,
+            trail_percent=trail_percent,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Trailing Stop BUY: {qty} {symbol} | Trail: {trail_percent}%")
+        return order
+
+    def buy_notional(self, symbol: str, dollar_amount: float,
+                     time_in_force: TimeInForce = TimeInForce.DAY):
+        """Buy a dollar amount worth of a stock (fractional shares)."""
+        order_data = MarketOrderRequest(
+            symbol=symbol,
+            notional=dollar_amount,
+            side=OrderSide.BUY,
+            time_in_force=time_in_force,
+        )
+        order = self.trading_client.submit_order(order_data)
+        print(f"✅ Market BUY (notional): ${dollar_amount} of {symbol}")
+        return order
+
+    # ─────────────────────────────────────────────
+    # ORDER MANAGEMENT
+    # ─────────────────────────────────────────────
+
+    def get_order(self, order_id: str):
+        """Get details of a specific order."""
+        return self.trading_client.get_order_by_id(order_id)
+
+    def get_open_orders(self) -> list:
+        """Get all open orders."""
+        request = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+        orders = self.trading_client.get_orders(request)
+        for o in orders:
+            print(f"   {o.side} {o.qty} {o.symbol} | Type: {o.type} | Status: {o.status}")
+        return orders
+
+    def get_all_orders(self, limit: int = 50) -> list:
+        """Get recent orders (all statuses)."""
+        request = GetOrdersRequest(
+            status=QueryOrderStatus.ALL,
+            limit=limit,
+        )
+        return self.trading_client.get_orders(request)
+
+    def cancel_order(self, order_id: str):
+        """Cancel a specific order."""
+        self.trading_client.cancel_order_by_id(order_id)
+        print(f"❌ Order {order_id} cancelled")
+
+    def cancel_all_orders(self):
+        """Cancel all open orders."""
+        statuses = self.trading_client.cancel_orders()
+        print(f"❌ Cancelled {len(statuses)} orders")
+        return statuses
+
+    def wait_for_fill(self, order_id: str, timeout: int = 60, poll_interval: int = 2):
+        """Wait for an order to fill."""
+        start = time.time()
+        while time.time() - start < timeout:
+            order = self.trading_client.get_order_by_id(order_id)
+            if order.status == OrderStatus.FILLED:
+                print(f"✅ Order FILLED: {order.filled_qty} @ ${order.filled_avg_price}")
+                return order
+            elif order.status in (OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED):
+                print(f"❌ Order {order.status}: {order_id}")
+                return order
+            print(f"   ⏳ Status: {order.status} (waiting...)")
+            time.sleep(poll_interval)
+        print(f"⏰ Timeout waiting for order fill")
+        return self.trading_client.get_order_by_id(order_id)
+
+    # ─────────────────────────────────────────────
+    # POSITIONS
+    # ─────────────────────────────────────────────
+
+    def get_positions(self) -> list:
+        """Get all open positions."""
+        positions = self.trading_client.get_all_positions()
+        print(f"\n📊 Open Positions ({len(positions)}):")
+        print(f"   {'Symbol':<8} {'Qty':>8} {'Avg Entry':>12} {'Current':>12} {'P/L':>12} {'P/L %':>8}")
+        print(f"   {'-'*68}")
+        for p in positions:
+            print(
+                f"   {p.symbol:<8} "
+                f"{float(p.qty):>8.2f} "
+                f"${float(p.avg_entry_price):>10.2f} "
+                f"${float(p.current_price):>10.2f} "
+                f"${float(p.unrealized_pl):>10.2f} "
+                f"{float(p.unrealized_plpc)*100:>7.2f}%"
+            )
+        return positions
+
+    def get_position(self, symbol: str):
+        """Get position for a specific symbol."""
+        try:
+            position = self.trading_client.get_open_position(symbol)
+            print(f"📊 {symbol}: {position.qty} shares @ ${position.avg_entry_price}")
+            print(f"   Current: ${position.current_price} | P/L: ${position.unrealized_pl}")
+            return position
+        except Exception as e:
+            print(f"   No open position for {symbol}: {e}")
+            return None
+
+    def close_position(self, symbol: str, qty: float = None, percentage: float = None):
+        """
+        Close a position (fully or partially).
+
+        Args:
+            symbol: Stock symbol
+            qty: Number of shares to close (None = close all)
+            percentage: Percentage to close (e.g., 50 for 50%)
+        """
+        if percentage is not None:
+            close_options = ClosePositionRequest(percentage=str(percentage))
+        elif qty is not None:
+            close_options = ClosePositionRequest(qty=str(qty))
+        else:
+            close_options = None  # Close entire position
+
+        order = self.trading_client.close_position(symbol, close_options=close_options)
+        print(f"✅ Closing position: {symbol}")
+        return order
+
+    def close_all_positions(self, cancel_orders: bool = True):
+        """Close all open positions."""
+        responses = self.trading_client.close_all_positions(cancel_orders=cancel_orders)
+        print(f"✅ Closing all positions ({len(responses)} positions)")
+        return responses
+
+    # ─────────────────────────────────────────────
+    # PORTFOLIO ANALYTICS
+    # ─────────────────────────────────────────────
+
+    def portfolio_summary(self):
+        """Print a comprehensive portfolio summary."""
+        account = self.trading_client.get_account()
+        positions = self.trading_client.get_all_positions()
+
+        total_pl = sum(float(p.unrealized_pl) for p in positions)
+        total_market_value = sum(float(p.market_value) for p in positions)
+
+        print("\n" + "=" * 60)
+        print("📈 PORTFOLIO SUMMARY")
+        print("=" * 60)
+        print(f"  Cash:              ${float(account.cash):>12,.2f}")
+        print(f"  Portfolio Value:   ${float(account.portfolio_value):>12,.2f}")
+        print(f"  Equity:            ${float(account.equity):>12,.2f}")
+        print(f"  Buying Power:      ${float(account.buying_power):>12,.2f}")
+        print(f"  Market Value:      ${total_market_value:>12,.2f}")
+        print(f"  Unrealized P/L:    ${total_pl:>12,.2f}")
+        print(f"  Positions:         {len(positions):>12}")
+        print("=" * 60)
+
+        if positions:
+            self.get_positions()
+
+
+# ─────────────────────────────────────────────
+# USAGE EXAMPLE
+# ─────────────────────────────────────────────
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+
+
+    # ⚠️ Replace with your actual Alpaca API keys
+    API_KEY = os.getenv("ALPACA_API_KEY")
+    SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+
+    if not API_KEY or not SECRET_KEY:
+        print("❌ Error: ALPACA_API_KEY or ALPACA_SECRET_KEY not found in environment variables.")
+        exit(1)
+
+    # Initialize the client
+    try:
+        trader = AlpacaPaperTrader(API_KEY, SECRET_KEY)
+        print("✅ Successfully connected to Alpaca Paper Trading API")
+    except Exception as e:
+        print(f"\n❌ FAILED to connect to Alpaca API: {e}")
+        print("💡 Please check your ALPACA_API_KEY and ALPACA_SECRET_KEY in the .env file.")
+        print("   They should look like: PK... (Key) and ... (Secret)")
+        exit(1)
+
+    # ── Check market status ──
+    trader.is_market_open()
+
+    # ── Get account info ──
+    info = trader.get_account_info()
+    print(f"\nAccount cash: ${info['cash']:,.2f}")
+
+    # ── Get market data ──
+    quote = trader.get_latest_quote("AAPL")
+    print(f"\nAAPL - Ask: ${quote['ask_price']}, Bid: ${quote['bid_price']}")
+
+    # Get historical bars
+    bars = trader.get_bars("AAPL", days=5)
+    for bar in bars[-3:]:
+        print(f"  {bar['timestamp'].date()} | O: ${bar['open']:.2f} H: ${bar['high']:.2f} "
+              f"L: ${bar['low']:.2f} C: ${bar['close']:.2f} V: {bar['volume']:,}")
+
+    # ── Place orders ──
+
+    # Market buy 1 share of AAPL
+    order = trader.buy_market("AAPL", qty=1)
+
+    # Limit buy 2 shares of MSFT at $400
+    # order = trader.buy_limit("MSFT", qty=2, limit_price=400.00)
+
+    # Buy $500 worth of GOOGL (fractional shares)
+    # order = trader.buy_notional("GOOGL", dollar_amount=500.00)
+
+    # Stop-limit sell for risk management
+    # order = trader.sell_stop_limit("AAPL", qty=1, stop_price=170.00, limit_price=169.50)
+
+    # Wait for the order to fill
+    filled_order = trader.wait_for_fill(str(order.id), timeout=30)
+
+    # ── Check positions ──
+    trader.portfolio_summary()
+
+    # ── Sell / close positions ──
+    # trader.sell_market("AAPL", qty=1)
+    # trader.close_position("AAPL")              # Close entire position
+    # trader.close_position("AAPL", percentage=50)  # Close 50%
+
+    # ── Order management ──
+    open_orders = trader.get_open_orders()
+    # trader.cancel_all_orders()
+
+    # ── Nuclear option: close everything ──
+    # trader.close_all_positions()
+
+---
+src/backtest_reference_copula.py
+---
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+from src.copula_model import (
+    fit_best_marginal,
+    fit_copula_candidates,
+    h_functions_numerical,
+)
+from src.data_io import load_closes_from_dir
+from src.stats_tests import cointegration_with_reference
+
+
+@dataclass
+class Trade:
+    entry_time: pd.Timestamp
+    exit_time: pd.Timestamp
+    symbol_long: str
+    symbol_short: str
+    qty_long: float
+    qty_short: float
+    entry_price_long: float
+    entry_price_short: float
+    exit_price_long: float
+    exit_price_short: float
+    fees: float
+    pnl: float
+
+
+@dataclass
+class BacktestConfig:
+    reference_symbol: str = "BTCUSDT"
+    interval: str = "1h"
+    formation_hours: int = 21 * 24
+    trading_hours: int = 7 * 24
+    step_hours: int = 7 * 24
+    # EG can be too restrictive in short rolling windows; allow disabling by setting to 1.0.
+    eg_alpha: float = 1.00
+    adf_alpha: float = 0.10
+    kss_critical_10pct: float = -1.92
+    use_intercept_beta: bool = False
+    alpha1: float = 0.20
+    alpha2: float = 0.10
+    capital_per_side: float = 20_000.0
+    initial_capital: float = 20_000.0
+    fee_rate: float = 0.0004  # 4 bps per leg per trade, adjustable
+
+
+def kendall_tau(x: pd.Series, y: pd.Series) -> float:
+    a, b = x.align(y, join="inner")
+    a = a.to_numpy(dtype=float)
+    b = b.to_numpy(dtype=float)
+    mask = np.isfinite(a) & np.isfinite(b)
+    if mask.sum() < 100:
+        return float("nan")
+    tau, _p = stats.kendalltau(a[mask], b[mask])
+    return float(tau) if tau is not None else float("nan")
+
+
+def pick_pair(
+    window_prices: pd.DataFrame,
+    cfg: BacktestConfig,
+) -> tuple[str, str, dict[str, float]] | None:
+    """Select two altcoins for the cycle.
+
+    Paper logic (implementation methodology section):
+    - Identify assets cointegrated with reference using EG + KSS (and ADF on spread)
+    - Rank by Kendall tau with reference
+    - Pick top 2
+
+    Returns (sym1, sym2, betas) where betas map alt symbol -> beta.
+    """
+
+    ref = window_prices[cfg.reference_symbol].dropna()
+    candidates = [c for c in window_prices.columns if c != cfg.reference_symbol]
+
+    stats_rows: list[tuple[str, float, float]] = []  # (symbol, tau_with_ref, beta)
+    betas: dict[str, float] = {}
+
+    for sym in candidates:
+        res = cointegration_with_reference(
+            ref,
+            window_prices[sym],
+            eg_alpha=cfg.eg_alpha,
+            adf_alpha=cfg.adf_alpha,
+            kss_critical_10pct=cfg.kss_critical_10pct,
+            use_intercept=cfg.use_intercept_beta,
+        )
+        if res is None:
+            continue
+
+        tau = kendall_tau(ref, window_prices[sym])
+        if not np.isfinite(tau):
+            continue
+
+        stats_rows.append((sym, tau, res.beta))
+        betas[sym] = res.beta
+
+    if len(stats_rows) < 2:
+        return None
+
+    stats_rows.sort(key=lambda r: r[1], reverse=True)
+    s1, _tau1, _b1 = stats_rows[0]
+    s2, _tau2, _b2 = stats_rows[1]
+    return s1, s2, betas
+
+
+def position_sizes(beta1: float, beta2: float, p1: float, p2: float, capital_per_side: float) -> tuple[float, float]:
+    """Compute quantities so each leg's notional is <= capital_per_side.
+
+    Implements the paper's Table 4 logic up to a scaling factor k:
+      beta2 * P2 - beta1 * P1
+
+    Choose k so max(beta1*P1, beta2*P2) * k ≈ capital_per_side.
+
+    Returns (q1, q2) where q1 is quantity in asset1, q2 in asset2.
+    """
+    denom = max(abs(beta1 * p1), abs(beta2 * p2))
+    if denom <= 0:
+        return 0.0, 0.0
+    k = capital_per_side / denom
+    q1 = k * beta1
+    q2 = k * beta2
+    return float(q1), float(q2)
+
+
+def run_cycle(prices: pd.DataFrame, start_idx: int, cfg: BacktestConfig) -> tuple[list[Trade], dict, pd.Series]:
+    idx = prices.index
+    formation_slice = slice(start_idx, start_idx + cfg.formation_hours)
+    trading_slice = slice(start_idx + cfg.formation_hours, start_idx + cfg.formation_hours + cfg.trading_hours)
+
+    formation = prices.iloc[formation_slice].dropna(how="any")
+    trading = prices.iloc[trading_slice].dropna(how="any")
+
+    if formation.empty or trading.empty:
+        return [], {"skipped": True, "reason": "missing_data"}, pd.Series(dtype=float)
+
+    picked = pick_pair(formation, cfg)
+    if picked is None:
+        # Equity curve is flat at 0 over the trading window.
+        return [], {"skipped": True, "reason": "no_cointegrated_pair"}, pd.Series(0.0, index=trading.index)
+
+    sym1, sym2, betas = picked
+    beta1 = float(betas[sym1])
+    beta2 = float(betas[sym2])
+
+    ref_f = formation[cfg.reference_symbol]
+    p1_f = formation[sym1]
+    p2_f = formation[sym2]
+
+    s1 = ref_f - beta1 * p1_f
+    s2 = ref_f - beta2 * p2_f
+
+    try:
+        m1 = fit_best_marginal(s1.to_numpy(dtype=float))
+        m2 = fit_best_marginal(s2.to_numpy(dtype=float))
+
+        u1 = m1.cdf(s1.to_numpy(dtype=float))
+        u2 = m2.cdf(s2.to_numpy(dtype=float))
+        u = np.column_stack([u1, u2])
+        u = u[np.isfinite(u).all(axis=1)]
+        if u.shape[0] < 50:
+            raise ValueError("Not enough valid PIT samples to fit copula")
+
+        fitted = fit_copula_candidates(u)
+
+        best = None
+        for cand in fitted:
+            try:
+                _ = cand.copula.cdf(np.array([[0.5, 0.5]], dtype=float))
+                best = cand
+                break
+            except NotImplementedError:
+                continue
+            except Exception:
+                continue
+        if best is None:
+            raise ValueError("No fitted copula supported CDF evaluation")
+    except Exception as e:
+        return (
+            [],
+            {
+                "skipped": True,
+                "reason": "marginal_or_copula_fit_failed",
+                "pair": (sym1, sym2),
+                "error": str(e),
+            },
+            pd.Series(0.0, index=trading.index),
+        )
+
+    trades: list[Trade] = []
+
+    pos = None  # (long_sym, short_sym, q_long, q_short, entry_prices, entry_time, fees_paid)
+    realized = 0.0
+    # equity_series is PnL (not including initial capital) per hour during trading
+    equity_points: list[tuple[pd.Timestamp, float]] = []
+
+    for t, row in trading.iterrows():
+        pref = float(row[cfg.reference_symbol])
+        p1 = float(row[sym1])
+        p2 = float(row[sym2])
+
+        s1_t = pref - beta1 * p1
+        s2_t = pref - beta2 * p2
+
+        u1_t = float(m1.cdf(s1_t))
+        u2_t = float(m2.cdf(s2_t))
+
+        h1_2, h2_1 = h_functions_numerical(best.copula, u1_t, u2_t)
+
+        open_long_s1_short_s2 = (h1_2 < cfg.alpha1) and (h2_1 > (1 - cfg.alpha1))
+        open_short_s1_long_s2 = (h1_2 > (1 - cfg.alpha1)) and (h2_1 < cfg.alpha1)
+        close_signal = (abs(h1_2 - 0.5) < cfg.alpha2) and (abs(h2_1 - 0.5) < cfg.alpha2)
+
+        if pos is None:
+            if open_long_s1_short_s2:
+                # Table 4: long beta2*P2 and short beta1*P1
+                q1, q2 = position_sizes(beta1, beta2, p1, p2, cfg.capital_per_side)
+                qty_long = q2
+                qty_short = -q1
+                long_sym = sym2
+                short_sym = sym1
+                notional = abs(qty_long * p2) + abs(qty_short * p1)
+                fees = cfg.fee_rate * notional
+                pos = (long_sym, short_sym, qty_long, qty_short, p2, p1, t, fees)
+                realized -= fees
+            elif open_short_s1_long_s2:
+                # Table 4: short beta2*P2 and long beta1*P1
+                q1, q2 = position_sizes(beta1, beta2, p1, p2, cfg.capital_per_side)
+                qty_long = q1
+                qty_short = -q2
+                long_sym = sym1
+                short_sym = sym2
+                notional = abs(qty_long * p1) + abs(qty_short * p2)
+                fees = cfg.fee_rate * notional
+                pos = (long_sym, short_sym, qty_long, qty_short, p1, p2, t, fees)
+                realized -= fees
+            else:
+                equity_points.append((t, realized))
+                continue
+        else:
+            long_sym, short_sym, qty_long, qty_short, entry_price_long, entry_price_short, entry_time, fees_paid = pos
+
+            if close_signal:
+                # Close at current prices
+                px_long = float(row[long_sym])
+                px_short = float(row[short_sym])
+                notional = abs(qty_long * px_long) + abs(qty_short * px_short)
+                fees = fees_paid + cfg.fee_rate * notional
+
+                pnl_long = qty_long * (px_long - entry_price_long)
+                pnl_short = qty_short * (px_short - entry_price_short)
+                pnl = pnl_long + pnl_short - fees
+
+                # Realize PnL and remove any previously accounted entry fee
+                realized += pnl
+
+                trades.append(
+                    Trade(
+                        entry_time=entry_time,
+                        exit_time=t,
+                        symbol_long=long_sym,
+                        symbol_short=short_sym,
+                        qty_long=qty_long,
+                        qty_short=qty_short,
+                        entry_price_long=entry_price_long,
+                        entry_price_short=entry_price_short,
+                        exit_price_long=px_long,
+                        exit_price_short=px_short,
+                        fees=fees,
+                        pnl=pnl,
+                    )
+                )
+                pos = None
+                equity_points.append((t, realized))
+            else:
+                # Mark-to-market
+                px_long = float(row[long_sym])
+                px_short = float(row[short_sym])
+                unreal = qty_long * (px_long - entry_price_long) + qty_short * (px_short - entry_price_short)
+                equity_points.append((t, realized + float(unreal)))
+
+    # Force-close at end of trading window, per paper.
+    if pos is not None:
+        long_sym, short_sym, qty_long, qty_short, entry_price_long, entry_price_short, entry_time, fees_paid = pos
+        last_t = trading.index[-1]
+        last_row = trading.iloc[-1]
+        px_long = float(last_row[long_sym])
+        px_short = float(last_row[short_sym])
+        notional = abs(qty_long * px_long) + abs(qty_short * px_short)
+        fees = fees_paid + cfg.fee_rate * notional
+
+        pnl_long = qty_long * (px_long - entry_price_long)
+        pnl_short = qty_short * (px_short - entry_price_short)
+        pnl = pnl_long + pnl_short - fees
+
+        realized += pnl
+
+        trades.append(
+            Trade(
+                entry_time=entry_time,
+                exit_time=last_t,
+                symbol_long=long_sym,
+                symbol_short=short_sym,
+                qty_long=qty_long,
+                qty_short=qty_short,
+                entry_price_long=entry_price_long,
+                entry_price_short=entry_price_short,
+                exit_price_long=px_long,
+                exit_price_short=px_short,
+                fees=fees,
+                pnl=pnl,
+            )
+        )
+
+        equity_points.append((last_t, realized))
+
+    meta = {
+        "skipped": False,
+        "pair": (sym1, sym2),
+        "betas": (beta1, beta2),
+        "copula": best.name,
+        "copula_aic": best.aic,
+        "formation_start": formation.index[0],
+        "trading_start": trading.index[0],
+        "trading_end": trading.index[-1],
+    }
+
+    equity = pd.Series({t: v for t, v in equity_points}).sort_index()
+    # Ensure we cover the whole trading window (flat-fill if needed)
+    equity = equity.reindex(trading.index).ffill().fillna(0.0)
+
+    return trades, meta, equity
+
+
+def performance_summary(trades: list[Trade], equity_pnl: pd.Series, cfg: BacktestConfig) -> dict:
+    """Compute paper-style metrics from an hourly equity curve."""
+
+    trades_n = int(len(trades))
+    pnl_total = float(equity_pnl.iloc[-1]) if not equity_pnl.empty else 0.0
+
+    if equity_pnl.empty:
+        return {
+            "trades": trades_n,
+            "pnl": pnl_total,
+            "total_return": float("nan"),
+            "annual_return": float("nan"),
+            "annual_vol": float("nan"),
+            "sharpe": float("nan"),
+            "max_drawdown": float("nan"),
+            "win_rate": float("nan"),
+        }
+
+    equity = cfg.initial_capital + equity_pnl.astype(float)
+    rets = equity.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+
+    # Annualization for hourly returns
+    periods_per_year = 365.0 * 24.0
+
+    total_return = float(equity.iloc[-1] / equity.iloc[0] - 1.0)
+
+    # CAGR based annual return (more stable than compounding mean hourly return)
+    n_periods = max(1, int(len(equity) - 1))
+    annual_return = float((equity.iloc[-1] / equity.iloc[0]) ** (periods_per_year / n_periods) - 1.0)
+
+    mean_r = float(rets.mean()) if len(rets) else 0.0
+    vol_r = float(rets.std(ddof=1)) if len(rets) > 1 else 0.0
+    annual_vol = float(vol_r * np.sqrt(periods_per_year)) if vol_r > 0 else float("nan")
+    sharpe = float((mean_r / vol_r) * np.sqrt(periods_per_year)) if vol_r > 0 else float("nan")
+
+    # Max drawdown on equity
+    eq = equity.to_numpy(dtype=float)
+    peaks = np.maximum.accumulate(eq)
+    drawdowns = (eq - peaks) / peaks
+    max_dd = float(np.min(drawdowns))
+
+    pnls = np.array([t.pnl for t in trades], dtype=float) if trades else np.array([])
+    win_rate = float((pnls > 0).mean()) if pnls.size else float("nan")
+
+    return {
+        "trades": trades_n,
+        "pnl": pnl_total,
+        "total_return": total_return,
+        "annual_return": annual_return,
+        "annual_vol": annual_vol,
+        "sharpe": sharpe,
+        "max_drawdown": max_dd,
+        "win_rate": win_rate,
+    }
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Reference-asset-based copula pairs backtest")
+    p.add_argument("--data", required=True, help="Directory with *_1h.csv files")
+    p.add_argument("--interval", default="1h")
+    p.add_argument("--formation-hours", type=int, default=21 * 24)
+    p.add_argument("--trading-hours", type=int, default=7 * 24)
+    p.add_argument("--step-hours", type=int, default=7 * 24)
+    p.add_argument("--alpha1", type=float, default=0.20)
+    p.add_argument("--alpha2", type=float, default=0.10)
+    p.add_argument("--eg-alpha", type=float, default=1.00, help="Engle–Granger p-value threshold (set 1.0 to disable)")
+    p.add_argument("--adf-alpha", type=float, default=0.10, help="ADF p-value threshold on spread")
+    p.add_argument("--kss-critical", type=float, default=-1.92, help="KSS 10%% critical value (paper: -1.92)")
+    p.add_argument("--fee", type=float, default=0.0004)
+    p.add_argument("--capital", type=float, default=20000.0)
+    p.add_argument(
+        "--log-prices",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use log prices for cointegration/spreads (default: enabled)",
+    )
+    p.add_argument("--start", default=None, help="Optional start timestamp (UTC, ISO8601)")
+    p.add_argument("--end", default=None, help="Optional end timestamp (UTC, ISO8601)")
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+
+    cfg = BacktestConfig(
+        interval=args.interval,
+        formation_hours=args.formation_hours,
+        trading_hours=args.trading_hours,
+        step_hours=args.step_hours,
+        alpha1=args.alpha1,
+        alpha2=args.alpha2,
+        eg_alpha=args.eg_alpha,
+        adf_alpha=args.adf_alpha,
+        kss_critical_10pct=args.kss_critical,
+        fee_rate=args.fee,
+        capital_per_side=args.capital,
+    )
+
+    panel = load_closes_from_dir(Path(args.data), interval=cfg.interval)
+    closes = panel.closes
+
+    if args.start:
+        closes = closes[closes.index >= pd.to_datetime(args.start, utc=True)]
+    if args.end:
+        closes = closes[closes.index < pd.to_datetime(args.end, utc=True)]
+
+    required = {cfg.reference_symbol}
+    if not required.issubset(set(closes.columns)):
+        raise ValueError(f"Missing reference symbol {cfg.reference_symbol} in data")
+
+    # Remove columns with too many NaNs early.
+    closes = closes.dropna(axis=1, thresh=int(len(closes) * 0.95))
+
+    if args.log_prices:
+        # Cointegration/spread modeling is typically done in log-price space.
+        closes = np.log(closes.astype(float))
+
+    total_window = cfg.formation_hours + cfg.trading_hours
+    if len(closes) < total_window:
+        raise ValueError("Not enough data for a single formation+trading window")
+
+    all_trades: list[Trade] = []
+    cycle_metas: list[dict] = []
+    equity_curves: list[pd.Series] = []
+
+    cumulative_pnl = 0.0
+
+    i = 0
+    while i + total_window <= len(closes):
+        trades, meta, equity = run_cycle(closes, i, cfg)
+        cycle_metas.append(meta)
+        all_trades.extend(trades)
+
+        # Convert per-cycle PnL to cumulative PnL across cycles.
+        if not equity.empty:
+            equity = equity + cumulative_pnl
+            cumulative_pnl = float(equity.iloc[-1])
+        equity_curves.append(equity)
+        i += cfg.step_hours
+
+    equity_pnl = pd.concat(equity_curves).sort_index()
+    # Trading windows are non-overlapping; if there are duplicates, keep last.
+    equity_pnl = equity_pnl[~equity_pnl.index.duplicated(keep="last")]
+
+    # Include formation gaps as flat equity for calendar-time metrics.
+    if not equity_pnl.empty:
+        start_ts = equity_pnl.index.min()
+        end_ts = equity_pnl.index.max()
+        full_index = closes.loc[start_ts:end_ts].index
+        equity_pnl = equity_pnl.reindex(full_index).ffill().fillna(0.0)
+
+    summary = performance_summary(all_trades, equity_pnl, cfg)
+    print("Summary:", summary)
+    print("Cycles:", len(cycle_metas), "Trades:", len(all_trades))
+
+    skipped_reasons: dict[str, int] = {}
+    skipped_errors: dict[str, int] = {}
+    for m in cycle_metas:
+        if not m.get("skipped"):
+            continue
+        r = str(m.get("reason", "unknown"))
+        skipped_reasons[r] = skipped_reasons.get(r, 0) + 1
+        if r == "marginal_or_copula_fit_failed":
+            err = str(m.get("error", ""))
+            if err:
+                skipped_errors[err] = skipped_errors.get(err, 0) + 1
+    if skipped_reasons:
+        print("Skipped cycles by reason:", dict(sorted(skipped_reasons.items(), key=lambda kv: (-kv[1], kv[0]))))
+    if skipped_errors:
+        top = sorted(skipped_errors.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        print("Top fit-failure errors:", top)
+
+    # Write trades CSV for inspection
+    out = Path("data") / f"trades_{cfg.interval}_a1_{cfg.alpha1:.2f}_a2_{cfg.alpha2:.2f}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tdf = pd.DataFrame([t.__dict__ for t in all_trades])
+    if not tdf.empty:
+        tdf.to_csv(out, index=False)
+        print("Wrote", out)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+---
+src/bybit_client.py
+---
+"""Bybit API client for live trading.
+
+Handles market data streaming, order execution, and position management
+for Bybit USDT-margined perpetual futures.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import Any
+
+import pandas as pd
+from loguru import logger
+from pybit.unified_trading import HTTP, WebSocket
+
+
+@dataclass
+class Position:
+    """Current position information."""
+
+    symbol: str
+    side: str  # "Buy" or "Sell"
+    size: float
+    entry_price: float
+    unrealized_pnl: float
+    leverage: float
+
+
+@dataclass
+class OrderResult:
+    """Result of order placement."""
+
+    order_id: str
+    symbol: str
+    side: str
+    qty: float
+    price: float | None
+    status: str
+
+
+class BybitClient:
+    """Wrapper for Bybit API interactions."""
+
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        testnet: bool = True,
+    ):
+        """Initialize Bybit client.
+
+        Args:
+            api_key: Bybit API key
+            api_secret: Bybit API secret
+            testnet: If True, use testnet; otherwise use mainnet
+        """
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.testnet = testnet
+
+        # HTTP client for REST API
+        self.session = HTTP(
+            testnet=testnet,
+            api_key=api_key,
+            api_secret=api_secret,
+        )
+
+        logger.info(f"Initialized Bybit client (testnet={testnet})")
+
+    def get_account_balance(self) -> dict[str, float]:
+        """Get USDT account balance.
+
+        Returns:
+            Dict with 'total', 'available', 'used' balances in USDT
+        """
+        try:
+            result = self.session.get_wallet_balance(accountType="UNIFIED")
+            if result["retCode"] != 0:
+                raise ValueError(f"API error: {result['retMsg']}")
+
+            # Extract USDT balance
+            for coin in result["result"]["list"][0]["coin"]:
+                if coin["coin"] == "USDT":
+                    return {
+                        "total": float(coin["walletBalance"]),
+                        "available": float(coin["availableToWithdraw"]),
+                        "used": float(coin["walletBalance"]) - float(coin["availableToWithdraw"]),
+                    }
+
+            return {"total": 0.0, "available": 0.0, "used": 0.0}
+
+        except Exception as e:
+            logger.error(f"Failed to get account balance: {e}")
+            raise
+
+    def get_klines(
+        self,
+        symbol: str,
+        interval: str = "5",
+        limit: int = 200,
+        start_time: int | None = None,
+    ) -> pd.DataFrame:
+        """Fetch historical kline (candlestick) data.
+
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            interval: Kline interval in minutes ("1", "5", "15", "60", etc.)
+            limit: Number of candles to fetch (max 200 per request)
+            start_time: Start timestamp in milliseconds (optional)
+
+        Returns:
+            DataFrame with columns: timestamp, open, high, low, close, volume
+        """
+        try:
+            params: dict[str, Any] = {
+                "category": "linear",
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit,
+            }
+            if start_time:
+                params["start"] = start_time
+
+            result = self.session.get_kline(**params)
+
+            if result["retCode"] != 0:
+                raise ValueError(f"API error: {result['retMsg']}")
+
+            # Parse kline data
+            klines = result["result"]["list"]
+            df = pd.DataFrame(
+                klines,
+                columns=["timestamp", "open", "high", "low", "close", "volume", "turnover"],
+            )
+
+            # Convert types
+            df["timestamp"] = pd.to_datetime(df["timestamp"].astype(int), unit="ms", utc=True)
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = df[col].astype(float)
+
+            # Bybit returns newest first, so reverse
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Failed to get klines for {symbol}: {e}")
+            raise
+
+    def get_all_klines(
+        self,
+        symbol: str,
+        interval: str = "5",
+        days: int = 30,
+    ) -> pd.DataFrame:
+        """Fetch historical klines for multiple days (handles pagination).
+
+        Args:
+            symbol: Trading pair
+            interval: Kline interval in minutes
+            days: Number of days of history to fetch
+
+        Returns:
+            DataFrame with all klines
+        """
+        interval_minutes = int(interval)
+        candles_per_day = (24 * 60) // interval_minutes
+        total_candles = days * candles_per_day
+
+        all_data = []
+        end_time = int(time.time() * 1000)  # Current time in ms
+
+        while len(all_data) < total_candles:
+            # Fetch batch
+            df = self.get_klines(symbol, interval, limit=200, start_time=end_time - 200 * interval_minutes * 60 * 1000)
+
+            if df.empty:
+                break
+
+            all_data.append(df)
+
+            # Move end_time backwards
+            end_time = int(df["timestamp"].iloc[0].timestamp() * 1000) - 1
+
+            # Avoid rate limits
+            time.sleep(0.1)
+
+            if len(all_data) * 200 >= total_candles:
+                break
+
+        if not all_data:
+            return pd.DataFrame()
+
+        # Combine and deduplicate
+        result = pd.concat(all_data, ignore_index=True)
+        result = result.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+
+        # Trim to requested days
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)
+        result = result[result["timestamp"] >= cutoff]
+
+        return result
+
+    def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+    ) -> OrderResult:
+        """Place a market order.
+
+        Args:
+            symbol: Trading pair
+            side: "Buy" or "Sell"
+            qty: Order quantity (positive number)
+
+        Returns:
+            OrderResult with order details
+        """
+        try:
+            result = self.session.place_order(
+                category="linear",
+                symbol=symbol,
+                side=side,
+                orderType="Market",
+                qty=str(abs(qty)),
+                timeInForce="GTC",
+            )
+
+            if result["retCode"] != 0:
+                raise ValueError(f"Order failed: {result['retMsg']}")
+
+            order_data = result["result"]
+            logger.info(f"Placed {side} market order: {symbol} qty={qty} orderId={order_data['orderId']}")
+
+            return OrderResult(
+                order_id=order_data["orderId"],
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=None,  # Market order, filled at market price
+                status="Submitted",
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to place order {symbol} {side} {qty}: {e}")
+            raise
+
+    def get_positions(self) -> list[Position]:
+        """Get all open positions.
+
+        Returns:
+            List of Position objects
+        """
+        try:
+            result = self.session.get_positions(category="linear", settleCoin="USDT")
+
+            if result["retCode"] != 0:
+                raise ValueError(f"API error: {result['retMsg']}")
+
+            positions = []
+            for pos in result["result"]["list"]:
+                size = float(pos["size"])
+                if size == 0:
+                    continue  # Skip closed positions
+
+                positions.append(
+                    Position(
+                        symbol=pos["symbol"],
+                        side=pos["side"],
+                        size=size,
+                        entry_price=float(pos["avgPrice"]),
+                        unrealized_pnl=float(pos["unrealisedPnl"]),
+                        leverage=float(pos["leverage"]),
+                    )
+                )
+
+            return positions
+
+        except Exception as e:
+            logger.error(f"Failed to get positions: {e}")
+            raise
+
+    def close_position(self, symbol: str) -> OrderResult | None:
+        """Close an open position by placing opposite market order.
+
+        Args:
+            symbol: Trading pair
+
+        Returns:
+            OrderResult if position was closed, None if no position
+        """
+        positions = self.get_positions()
+        for pos in positions:
+            if pos.symbol == symbol:
+                # Place opposite order
+                opposite_side = "Sell" if pos.side == "Buy" else "Buy"
+                return self.place_market_order(symbol, opposite_side, pos.size)
+
+        logger.warning(f"No open position found for {symbol}")
+        return None
+
+    def get_latest_price(self, symbol: str) -> float:
+        """Get latest market price for a symbol.
+
+        Args:
+            symbol: Trading pair
+
+        Returns:
+            Latest price
+        """
+        try:
+            result = self.session.get_tickers(category="linear", symbol=symbol)
+
+            if result["retCode"] != 0:
+                raise ValueError(f"API error: {result['retMsg']}")
+
+            return float(result["result"]["list"][0]["lastPrice"])
+
+        except Exception as e:
+            logger.error(f"Failed to get price for {symbol}: {e}")
+            raise
+
+
+---
+src/copula_model.py
+---
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+from scipy import stats
+
+from copulae import ClaytonCopula, FrankCopula, GaussianCopula, GumbelCopula, StudentCopula
+
+
+@dataclass(frozen=True)
+class FittedMarginal:
+    dist: object
+    params: tuple
+
+    def cdf(self, x: np.ndarray | float) -> np.ndarray:
+        d = self.dist
+        return np.asarray(d.cdf(x, *self.params), dtype=float)
+
+
+@dataclass(frozen=True)
+class FittedCopula:
+    name: str
+    copula: object
+    aic: float
+
+
+class RotatedCopula:
+    """Wrapper implementing rotated copulas (paper Eq. 16).
+
+    C90(u1,u2)  := C(1-u2, u1)
+    C180(u1,u2) := C(1-u1, 1-u2)
+    C270(u1,u2) := C(u2, 1-u1)
+
+    This wrapper exposes cdf/pdf that accept an (n,2) array.
+    """
+
+    def __init__(self, base: object, rotation: int):
+        if rotation not in (0, 90, 180, 270):
+            raise ValueError("rotation must be one of {0,90,180,270}")
+        self.base = base
+        self.rotation = rotation
+
+    def _transform(self, u: np.ndarray) -> np.ndarray:
+        u = np.asarray(u, dtype=float)
+        if u.ndim != 2 or u.shape[1] != 2:
+            raise ValueError("u must be shape (n,2)")
+        u1 = u[:, 0]
+        u2 = u[:, 1]
+        if self.rotation == 0:
+            out = np.column_stack([u1, u2])
+        elif self.rotation == 90:
+            out = np.column_stack([1 - u2, u1])
+        elif self.rotation == 180:
+            out = np.column_stack([1 - u1, 1 - u2])
+        else:  # 270
+            out = np.column_stack([u2, 1 - u1])
+        return _safe_unit_interval(out)
+
+    def cdf(self, u: np.ndarray) -> np.ndarray:
+        return self.base.cdf(self._transform(u))
+
+    def pdf(self, u: np.ndarray) -> np.ndarray:
+        return self.base.pdf(self._transform(u))
+
+
+def fit_best_marginal(spread: np.ndarray) -> FittedMarginal:
+    """Fit Gaussian / Student-t / Cauchy and choose by AIC (paper's approach)."""
+    candidates = [stats.norm, stats.t, stats.cauchy]
+    best_aic = float("inf")
+    best = None
+
+    spread = np.asarray(spread, dtype=float)
+    spread = spread[np.isfinite(spread)]
+    if spread.size < 50:
+        raise ValueError("Not enough spread samples to fit marginals")
+
+    for d in candidates:
+        params = d.fit(spread)
+        pdf = d.pdf(spread, *params)
+        # Guard log(0)
+        pdf = np.clip(pdf, 1e-300, None)
+        log_lik = float(np.sum(np.log(pdf)))
+        k = len(params)
+        aic = 2 * k - 2 * log_lik
+        if aic < best_aic:
+            best_aic = aic
+            best = (d, params)
+
+    assert best is not None
+    return FittedMarginal(dist=best[0], params=tuple(best[1]))
+
+
+def _safe_unit_interval(u: np.ndarray) -> np.ndarray:
+    # Copulas can be numerically unhappy at exactly 0 or 1.
+    eps = 1e-10
+    return np.clip(u, eps, 1 - eps)
+
+
+def fit_copula_candidates(u: np.ndarray) -> list[FittedCopula]:
+    """Fit a small set of copulas available in copulae and compute AIC.
+
+    The paper evaluates many families (incl. BB*, Tawn). Here we implement a
+    practical subset we can fit robustly with copulae out of the box.
+    """
+    u = np.asarray(u, dtype=float)
+    if u.ndim != 2 or u.shape[1] != 2:
+        raise ValueError("u must be an array of shape (n, 2)")
+    u = _safe_unit_interval(u)
+
+    base_candidates: list[tuple[str, object]] = [
+        ("gaussian", GaussianCopula(dim=2)),
+        ("student", StudentCopula(dim=2)),
+        ("clayton", ClaytonCopula(dim=2)),
+        ("gumbel", GumbelCopula(dim=2)),
+        ("frank", FrankCopula(dim=2)),
+    ]
+
+    # Rotations can capture negative dependence / different tail structure.
+    rotations = (0, 90, 180, 270)
+
+    candidates: list[tuple[str, object]] = []
+    for name, base in base_candidates:
+        for rot in rotations:
+            if rot == 0:
+                candidates.append((name, base.__class__(dim=2)))
+            else:
+                candidates.append((f"{name}_rot{rot}", RotatedCopula(base.__class__(dim=2), rot)))
+
+    fitted: list[FittedCopula] = []
+
+    def _log_lik_value(cop: object, u_: np.ndarray) -> float:
+        """Return a scalar log-likelihood for a fitted copula.
+
+        copulae sometimes exposes `log_lik` as a scalar or a vector; in either
+        case we convert to a scalar by summing.
+        """
+        ll_attr = getattr(cop, "log_lik", None)
+        ll = None
+        if ll_attr is not None:
+            if callable(ll_attr):
+                try:
+                    ll = ll_attr()
+                except Exception:
+                    ll = None
+            else:
+                ll = ll_attr
+
+        if ll is not None:
+            arr = np.asarray(ll, dtype=float)
+            return float(arr) if arr.ndim == 0 else float(np.nansum(arr))
+
+        pdf = np.asarray(cop.pdf(u_), dtype=float)
+        pdf = np.clip(pdf, 1e-300, None)
+        return float(np.sum(np.log(pdf)))
+
+    for name, c in candidates:
+        try:
+            # RotatedCopula wraps an underlying copula that supports fit()
+            if isinstance(c, RotatedCopula):
+                c.base.fit(u)
+            else:
+                c.fit(u)
+
+            # Many copulae objects expose log_lik; fall back to log(pdf) sum.
+            if isinstance(c, RotatedCopula):
+                log_lik = _log_lik_value(c.base, c._transform(u))
+            else:
+                log_lik = _log_lik_value(c, u)
+
+            # Parameter count: use len(params) if present, else 1.
+            k = 1
+            params_obj = None
+            if isinstance(c, RotatedCopula):
+                params_obj = getattr(c.base, "params", None)
+            else:
+                params_obj = getattr(c, "params", None)
+
+            if params_obj is not None:
+                try:
+                    k = int(np.size(params_obj))
+                except Exception:
+                    k = 1
+
+            aic = 2 * k - 2 * log_lik
+            fitted.append(FittedCopula(name=name, copula=c, aic=aic))
+        except Exception:
+            continue
+
+    if not fitted:
+        raise ValueError("No copula candidates could be fit")
+    return sorted(fitted, key=lambda x: x.aic)
+
+
+def h_functions_numerical(copula: object, u1: float, u2: float, *, delta: float = 1e-5) -> tuple[float, float]:
+    """Numerically approximate h_{1|2} and h_{2|1} from Eq. (4).
+
+    h_{1|2} = ∂C(u1,u2)/∂u2
+    h_{2|1} = ∂C(u1,u2)/∂u1
+
+    Uses central differences on the copula CDF.
+    """
+    u1 = float(np.clip(u1, 1e-10, 1 - 1e-10))
+    u2 = float(np.clip(u2, 1e-10, 1 - 1e-10))
+
+    def cdf(a: float, b: float) -> float:
+        arr = np.array([[a, b]], dtype=float)
+        val = copula.cdf(arr)
+        # copulae returns array-like
+        return float(np.asarray(val).reshape(-1)[0])
+
+    u2p = min(1 - 1e-10, u2 + delta)
+    u2m = max(1e-10, u2 - delta)
+    u1p = min(1 - 1e-10, u1 + delta)
+    u1m = max(1e-10, u1 - delta)
+
+    h1_2 = (cdf(u1, u2p) - cdf(u1, u2m)) / (u2p - u2m)
+    h2_1 = (cdf(u1p, u2) - cdf(u1m, u2)) / (u1p - u1m)
+
+    # h-functions are conditional CDF values, should be in [0,1]
+    h1_2 = float(np.clip(h1_2, 0.0, 1.0))
+    h2_1 = float(np.clip(h2_1, 0.0, 1.0))
+    return h1_2, h2_1
+
+
+---
+src/data_buffer.py
+---
+"""Rolling window data buffer for live trading.
+
+Maintains recent price history and provides slicing for formation/trading windows.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+from loguru import logger
+
+
+class DataBuffer:
+    """In-memory buffer for rolling window price data."""
+
+    def __init__(self, symbols: list[str], max_days: int = 30):
+        """Initialize data buffer.
+
+        Args:
+            symbols: List of trading symbols to track
+            max_days: Maximum days of history to keep in memory
+        """
+        self.symbols = symbols
+        self.max_days = max_days
+        self.data: dict[str, pd.DataFrame] = {sym: pd.DataFrame() for sym in symbols}
+
+    def update(self, symbol: str, new_candles: pd.DataFrame) -> None:
+        """Add new candles to buffer.
+
+        Args:
+            symbol: Trading symbol
+            new_candles: DataFrame with columns [timestamp, open, high, low, close, volume]
+        """
+        if symbol not in self.data:
+            logger.warning(f"Symbol {symbol} not in buffer, adding it")
+            self.data[symbol] = pd.DataFrame()
+
+        # Append new data
+        self.data[symbol] = pd.concat([self.data[symbol], new_candles], ignore_index=True)
+
+        # Remove duplicates
+        self.data[symbol] = (
+            self.data[symbol].drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+        )
+
+        # Trim to max_days
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=self.max_days)
+        self.data[symbol] = self.data[symbol][self.data[symbol]["timestamp"] >= cutoff]
+
+        logger.debug(f"Updated {symbol}: {len(self.data[symbol])} candles")
+
+    def get_closes(self, start: pd.Timestamp | None = None, end: pd.Timestamp | None = None) -> pd.DataFrame:
+        """Get close prices for all symbols in a time range.
+
+        Args:
+            start: Start timestamp (inclusive)
+            end: End timestamp (inclusive)
+
+        Returns:
+            DataFrame with timestamp index and symbol columns
+        """
+        closes_dict = {}
+
+        for sym in self.symbols:
+            df = self.data[sym].copy()
+
+            if start:
+                df = df[df["timestamp"] >= start]
+            if end:
+                df = df[df["timestamp"] <= end]
+
+            if not df.empty:
+                closes_dict[sym] = df.set_index("timestamp")["close"]
+
+        if not closes_dict:
+            return pd.DataFrame()
+
+        # Combine into single DataFrame
+        result = pd.DataFrame(closes_dict)
+        return result
+
+    def get_latest_prices(self) -> dict[str, float]:
+        """Get most recent close price for each symbol.
+
+        Returns:
+            Dict mapping symbol to latest price
+        """
+        prices = {}
+        for sym in self.symbols:
+            if not self.data[sym].empty:
+                prices[sym] = float(self.data[sym].iloc[-1]["close"])
+        return prices
+
+    def get_data_range(self) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+        """Get the earliest and latest timestamps across all symbols.
+
+        Returns:
+            (earliest, latest) timestamps
+        """
+        earliest = None
+        latest = None
+
+        for sym in self.symbols:
+            if not self.data[sym].empty:
+                sym_earliest = self.data[sym]["timestamp"].min()
+                sym_latest = self.data[sym]["timestamp"].max()
+
+                if earliest is None or sym_earliest < earliest:
+                    earliest = sym_earliest
+                if latest is None or sym_latest > latest:
+                    latest = sym_latest
+
+        return earliest, latest
+
+    def save(self, path: Path) -> None:
+        """Save buffer to disk.
+
+        Args:
+            path: Path to save file (parquet format)
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Combine all symbols into one DataFrame
+        all_data = []
+        for sym, df in self.data.items():
+            if not df.empty:
+                df_copy = df.copy()
+                df_copy["symbol"] = sym
+                all_data.append(df_copy)
+
+        if all_data:
+            combined = pd.concat(all_data, ignore_index=True)
+            combined.to_parquet(path, index=False)
+            logger.info(f"Saved buffer to {path}")
+        else:
+            logger.warning("No data to save")
+
+    def load(self, path: Path) -> None:
+        """Load buffer from disk.
+
+        Args:
+            path: Path to saved file
+        """
+        if not path.exists():
+            logger.warning(f"Buffer file {path} does not exist")
+            return
+
+        combined = pd.read_parquet(path)
+
+        # Split by symbol
+        for sym in combined["symbol"].unique():
+            sym_data = combined[combined["symbol"] == sym].drop(columns=["symbol"]).reset_index(drop=True)
+            self.data[sym] = sym_data
+
+        logger.info(f"Loaded buffer from {path}")
+
+    def is_ready(self, required_days: int) -> bool:
+        """Check if buffer has enough data for trading.
+
+        Args:
+            required_days: Minimum days of data needed
+
+        Returns:
+            True if all symbols have at least required_days of data
+        """
+        earliest, latest = self.get_data_range()
+
+        if earliest is None or latest is None:
+            return False
+
+        days_available = (latest - earliest).total_seconds() / (24 * 3600)
+        return days_available >= required_days
+
+
+---
+src/data_io.py
+---
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class PricePanel:
+    closes: pd.DataFrame  # index: datetime (UTC), columns: symbols, values: close
+
+
+def read_binance_klines_csv(path: Path) -> pd.Series:
+    """Reads a CSV written by src/download_binance_futures.py and returns close series.
+
+    Index is UTC timestamps for candle open times.
+    """
+    df = pd.read_csv(path)
+    # open_time_utc is ISO8601 with timezone; parse robustly.
+    ts = pd.to_datetime(df["open_time_utc"], utc=True)
+    close = pd.to_numeric(df["close"], errors="coerce")
+    s = pd.Series(close.values, index=ts, name="close").sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    return s
+
+
+def load_closes_from_dir(directory: Path, *, interval: str) -> PricePanel:
+    """Loads all *_<interval>.csv files in a directory into a single aligned DataFrame."""
+    directory = Path(directory)
+    if not directory.exists():
+        raise FileNotFoundError(f"Data directory not found: {directory}")
+
+    series_by_symbol: dict[str, pd.Series] = {}
+    for csv_path in sorted(directory.glob(f"*_{interval}.csv")):
+        name = csv_path.name
+        symbol = name[: -len(f"_{interval}.csv")]
+        s = read_binance_klines_csv(csv_path)
+        series_by_symbol[symbol] = s
+
+    if not series_by_symbol:
+        raise ValueError(f"No files matching '*_{interval}.csv' in {directory}")
+
+    df = pd.concat(series_by_symbol, axis=1)
+    df.columns = list(series_by_symbol.keys())
+
+    # Force UTC timezone index, sort.
+    df.index = pd.to_datetime(df.index, utc=True)
+    df = df.sort_index()
+
+    return PricePanel(closes=df)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+---
+src/download_binance_futures.py
+---
+"""Download Binance USDⓈ-M futures kline (candlestick) data.
+
+This repo's strategy (per Tadi & Witzany, Financial Innovation 2025) uses:
+- A reference asset (BTCUSDT) price series
+- Candidate altcoin price series
+- Hourly closes for formation/trading cycles (the paper also mentions 5-min data)
+
+This script downloads PUBLIC data from Binance Futures API (no API key required).
+
+Example:
+  /path/to/.venv/bin/python -m src.download_binance_futures \
+    --interval 1h \
+    --start 2021-01-01 \
+    --end 2023-01-19 \
+    --out data/binance_futures_1h
+
+  /path/to/.venv/bin/python -m src.download_binance_futures \
+    --interval 5m \
+    --start 2021-01-01 \
+    --end 2023-01-19 \
+    --out data/binance_futures_5m
+
+Notes:
+- Endpoint: https://fapi.binance.com/fapi/v1/klines
+- Limits: max 1500 candles per request; this script paginates.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable
+
+import requests
+
+
+BINANCE_FUTURES_BASE_URL = "https://fapi.binance.com"
+KLINES_PATH = "/fapi/v1/klines"
+
+# Symbols used in the paper (Table 1). BTCUSDT is the reference.
+DEFAULT_SYMBOLS: tuple[str, ...] = (
+    "BTCUSDT",
+    "ETHUSDT",
+    "BCHUSDT",
+    "XRPUSDT",
+    "EOSUSDT",
+    "LTCUSDT",
+    "TRXUSDT",
+    "ETCUSDT",
+    "LINKUSDT",
+    "XLMUSDT",
+    "ADAUSDT",
+    "XMRUSDT",
+    "DASHUSDT",
+    "ZECUSDT",
+    "XTZUSDT",
+    "ATOMUSDT",
+    "BNBUSDT",
+    "ONTUSDT",
+    "IOTAUSDT",
+    "BATUSDT",
+)
+
+
+@dataclass(frozen=True)
+class Kline:
+    open_time_ms: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    close_time_ms: int
+
+
+def _parse_utc_date(date_str: str) -> datetime:
+    # Accept YYYY-MM-DD
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return dt.replace(tzinfo=timezone.utc)
+
+
+def _to_ms(dt: datetime) -> int:
+    return int(dt.timestamp() * 1000)
+
+
+def fetch_klines(
+    *,
+    symbol: str,
+    interval: str,
+    start_ms: int,
+    end_ms: int,
+    session: requests.Session,
+    limit: int = 1500,
+    pause_s: float = 0.2,
+) -> list[Kline]:
+    """Fetch klines for a single symbol and interval between [start_ms, end_ms)."""
+
+    out: list[Kline] = []
+    next_start = start_ms
+
+    while next_start < end_ms:
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "startTime": next_start,
+            "endTime": end_ms,
+            "limit": limit,
+        }
+
+        resp = session.get(f"{BINANCE_FUTURES_BASE_URL}{KLINES_PATH}", params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        if not data:
+            break
+
+        for row in data:
+            # https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
+            out.append(
+                Kline(
+                    open_time_ms=int(row[0]),
+                    open=float(row[1]),
+                    high=float(row[2]),
+                    low=float(row[3]),
+                    close=float(row[4]),
+                    volume=float(row[5]),
+                    close_time_ms=int(row[6]),
+                )
+            )
+
+        # Advance start to just after the last candle open time.
+        last_open = int(data[-1][0])
+        if last_open == next_start:
+            # Defensive guard to avoid infinite loops if API returns a single repeated candle.
+            break
+        next_start = last_open + 1
+
+        time.sleep(pause_s)
+
+    return out
+
+
+def write_csv(path: Path, klines: Iterable[Kline]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "open_time_ms",
+            "open_time_utc",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time_ms",
+            "close_time_utc",
+        ])
+        for k in klines:
+            open_dt = datetime.fromtimestamp(k.open_time_ms / 1000, tz=timezone.utc)
+            close_dt = datetime.fromtimestamp(k.close_time_ms / 1000, tz=timezone.utc)
+            writer.writerow([
+                k.open_time_ms,
+                open_dt.isoformat(),
+                k.open,
+                k.high,
+                k.low,
+                k.close,
+                k.volume,
+                k.close_time_ms,
+                close_dt.isoformat(),
+            ])
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Download Binance USDⓈ-M futures klines to CSV")
+    parser.add_argument("--interval", default="1h", help="Kline interval, e.g. 1h or 5m")
+    parser.add_argument("--start", required=True, help="Start date (UTC) YYYY-MM-DD")
+    parser.add_argument("--end", required=True, help="End date (UTC) YYYY-MM-DD")
+    parser.add_argument(
+        "--symbols",
+        default=",".join(DEFAULT_SYMBOLS),
+        help="Comma-separated symbols (default: paper's Table 1 set)",
+    )
+    parser.add_argument("--out", required=True, help="Output directory")
+    parser.add_argument("--pause", type=float, default=0.2, help="Pause between API calls (seconds)")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+
+    start_dt = _parse_utc_date(args.start)
+    end_dt = _parse_utc_date(args.end)
+    start_ms = _to_ms(start_dt)
+    end_ms = _to_ms(end_dt)
+
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    out_dir = Path(args.out)
+
+    with requests.Session() as session:
+        for symbol in symbols:
+            klines = fetch_klines(
+                symbol=symbol,
+                interval=args.interval,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                session=session,
+                pause_s=args.pause,
+            )
+            out_path = out_dir / f"{symbol}_{args.interval}.csv"
+            write_csv(out_path, klines)
+            print(f"{symbol}: wrote {len(klines)} rows -> {out_path}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+---
+src/live_trader.py
+---
+"""Live trading orchestrator for copula-based pair trading.
+
+Manages the full trading cycle: data collection, pair selection,
+copula fitting, signal generation, and order execution.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import pandas as pd
+import numpy as np
+import yaml
+from dotenv import load_dotenv
+from loguru import logger
+
+
+# Add project root to path so we can import 'src' package
+if __name__ == "__main__":
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.okx_client import OKXClient
+from src.paper_client import PaperTradingClient
+from src.alpaca_client import AlpacaPaperTrader
+from src.data_buffer import DataBuffer
+from src.strategy_core import (
+    CopulaModel,
+    TradingPair,
+    TradingSignal,
+    calculate_position_sizes,
+    fit_copula_model,
+    generate_signal,
+    select_trading_pair,
+)
+
+
+@dataclass
+class TradingState:
+    """Persistent state for live trading."""
+
+    formation_start: str | None = None  # ISO timestamp
+    formation_end: str | None = None
+    trading_start: str | None = None
+    trading_end: str | None = None
+    current_pair: dict | None = None  # TradingPair as dict
+    active_position: dict | None = None  # Position info
+    cumulative_pnl: float = 0.0
+    trades_count: int = 0
+    last_update: str | None = None
+
+
+class LiveTrader:
+    """Main orchestrator for live trading."""
+
+    def __init__(self, config_path: str = "config.yaml"):
+        """Initialize live trader.
+
+        Args:
+            config_path: Path to configuration file
+        """
+        # Load configuration
+        with open(config_path) as f:
+            self.config = yaml.safe_load(f)
+
+        # Load environment variables
+        load_dotenv()
+
+        # Setup logging
+        log_dir = Path(self.config["logging"]["log_dir"])
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.remove()  # Remove default handler
+        logger.add(
+            sys.stderr,
+            level=self.config["logging"]["level"],
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+        )
+        logger.add(
+            log_dir / "trading_{time:YYYY-MM-DD}.log",
+            rotation="1 day",
+            retention="30 days",
+            level="DEBUG",
+        )
+
+        # Initialize Client based on mode
+        self.mode = self.config.get("mode", "live")
+        logger.info(f"Initializing LiveTrader in {self.mode.upper()} mode")
+
+        if self.mode == "paper":
+            self.client = PaperTradingClient(
+                initial_capital=self.config["paper"].get("initial_capital", 100000.0),
+                transaction_fee=self.config["paper"].get("transaction_fee", 0.001),
+                state_file=self.config["data"].get("paper_wallet_file", "data/paper_wallet.json")
+            )
+        elif self.mode == "alpaca":
+            alpaca_conf = self.config.get("alpaca", {})
+            api_key = os.getenv("ALPACA_API_KEY") or alpaca_conf.get("api_key")
+            secret_key = os.getenv("ALPACA_SECRET_KEY") or alpaca_conf.get("secret_key")
+
+            if not api_key or not secret_key:
+                raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env or config for Alpaca trading")
+                
+            alpaca_url = alpaca_conf.get("base_url")
+            self.client = AlpacaPaperTrader(api_key, secret_key, url_override=alpaca_url)
+            logger.info(f"Initialized Alpaca client (URL: {alpaca_url or 'default'})")
+        else:
+
+            # Initialize OKX client for live trading
+            api_key = os.getenv("OKX_API_KEY")
+            api_secret = os.getenv("OKX_API_SECRET")
+            passphrase = os.getenv("OKX_PASSPHRASE")
+
+            if not api_key or not api_secret or not passphrase:
+                raise ValueError("OKX_API_KEY, OKX_API_SECRET, and OKX_PASSPHRASE must be set in .env file for LIVE trading")
+
+            self.client = OKXClient(
+                api_key=api_key,
+                api_secret=api_secret,
+                passphrase=passphrase,
+                demo=self.config["okx"]["demo"],
+            )
+
+        # Initialize data buffer
+        all_symbols = [self.config["strategy"]["reference_symbol"]] + self.config["strategy"]["symbols"]
+        self.buffer = DataBuffer(symbols=all_symbols, max_days=self.config["strategy"]["formation_days"] + 7)
+
+        # Load or initialize state
+        self.state_file = Path(self.config["data"]["state_file"])
+        self.state = self._load_state()
+
+        # Current model and pair
+        self.current_model: CopulaModel | None = None
+        self.current_pair: TradingPair | None = None
+
+        logger.info("LiveTrader initialized")
+
+    def _load_state(self) -> TradingState:
+        """Load state from disk."""
+        if self.state_file.exists():
+            with open(self.state_file) as f:
+                data = json.load(f)
+                logger.info(f"Loaded state from {self.state_file}")
+                return TradingState(**data)
+        return TradingState()
+
+    def _save_state(self) -> None:
+        """Save state to disk."""
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.state_file, "w") as f:
+            json.dump(asdict(self.state), f, indent=2)
+
+    def initialize_data(self) -> None:
+        """Download initial historical data."""
+        logger.info("Initializing data buffer...")
+
+        buffer_file = Path(self.config["data"]["buffer_file"])
+
+        # Try to load existing buffer
+        if buffer_file.exists():
+            self.buffer.load(buffer_file)
+            logger.info("Loaded existing buffer")
+
+        # Check each symbol individually
+        required_days = self.config["strategy"]["formation_days"] + 1
+        
+        for symbol in self.buffer.symbols:
+            # Check if symbol already has enough data
+            if symbol in self.buffer.data and not self.buffer.data[symbol].empty:
+                df_sym = self.buffer.data[symbol]
+                earliest = df_sym["timestamp"].min()
+                latest = df_sym["timestamp"].max()
+                days_available = (latest - earliest).total_seconds() / (24 * 3600)
+                
+                if days_available >= required_days:
+                    logger.info(f"Symbol {symbol} already has {days_available:.1f} days of data, skipping download.")
+                    continue
+
+            logger.info(f"Downloading {required_days} days of historical data for {symbol}...")
+            try:
+                df = self.client.get_all_klines(
+                    symbol=symbol,
+                    interval=self.config["strategy"]["interval"],
+                    days=required_days,
+                )
+                if not df.empty:
+                    self.buffer.update(symbol, df)
+                    logger.info(f"Downloaded {len(df)} candles for {symbol}")
+                else:
+                    logger.warning(f"No data returned for {symbol}")
+                
+                time.sleep(1.0)  # Increase delay to avoid rate limiting
+            except Exception as e:
+                logger.error(f"Failed to download {symbol}: {e}")
+
+        # Save buffer
+        self.buffer.save(buffer_file)
+
+        earliest, latest = self.buffer.get_data_range()
+        logger.info(f"Data range: {earliest} to {latest}")
+
+    def update_data(self) -> None:
+        """Fetch latest candles and update buffer."""
+        for symbol in self.buffer.symbols:
+            try:
+                # Get last 10 candles to ensure we don't miss any
+                df = self.client.get_klines(
+                    symbol=symbol,
+                    interval=self.config["strategy"]["interval"],
+                    limit=10,
+                )
+                self.buffer.update(symbol, df)
+                time.sleep(0.2)
+            except Exception as e:
+                logger.error(f"Failed to update {symbol}: {e}")
+
+    def _validate_state(self) -> bool:
+        """Validate that current state is consistent with config.
+        
+        Returns:
+            True if valid, False if state needs reset
+        """
+        if self.state.current_pair is None:
+            return True  # No pair yet, valid
+        
+        # Check if pair symbols are in current config
+        pair_symbols = {self.state.current_pair["symbol1"], self.state.current_pair["symbol2"]}
+        config_symbols = set(self.buffer.symbols)
+        
+        if not pair_symbols.issubset(config_symbols):
+            logger.warning(f"State contains pair with symbols {pair_symbols} not in current config")
+            logger.warning("This likely means config changed. Resetting state.")
+            return False
+        
+        return True
+
+    def should_start_new_cycle(self) -> bool:
+        """Check if we should start a new formation period."""
+        # First check if state is valid
+        if not self._validate_state():
+            return True  # Force new cycle to reset state
+        
+        if self.state.trading_end is None:
+            return True  # First cycle
+
+        trading_end = pd.Timestamp(self.state.trading_end, tz="UTC")
+        now = pd.Timestamp.now(tz="UTC")
+
+        # Start new cycle if trading period ended
+        return now >= trading_end
+
+    def run_formation_period(self) -> bool:
+        """Run formation period: select pair and fit copula.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info("=== Starting Formation Period ===")
+
+        # Define formation window
+        latest = self.buffer.get_data_range()[1]
+        if latest is None:
+            logger.error("No data available")
+            return False
+
+        formation_days = self.config["strategy"]["formation_days"]
+        formation_end = latest
+        formation_start = formation_end - pd.Timedelta(days=formation_days)
+
+        logger.info(f"Formation window: {formation_start} to {formation_end}")
+
+        # Get formation data
+        formation_prices = self.buffer.get_closes(start=formation_start, end=formation_end)
+
+        if formation_prices.empty:
+            logger.error("No formation data available")
+            return False
+
+        # Use log prices for cointegration (as in backtest)
+        formation_prices = np.log(formation_prices.astype(float))
+
+        # Select trading pair
+        pair, results_df = select_trading_pair(
+            formation_prices,
+            reference_symbol=self.config["strategy"]["reference_symbol"],
+            eg_alpha=self.config["strategy"]["eg_alpha"],
+            adf_alpha=self.config["strategy"]["adf_alpha"],
+            kss_critical=self.config["strategy"]["kss_critical"],
+        )
+
+        # Write down detected pairs
+        if not results_df.empty:
+            report_dir = Path(self.config["data"].get("report_dir", "reports"))
+            report_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            report_path = report_dir / f"cointegrated_pairs_{timestamp}.csv"
+            results_df.to_csv(report_path, index=False)
+            logger.info(f"Saved {len(results_df)} cointegrated pairs to {report_path}")
+
+        if pair is None:
+            logger.warning("No suitable pair found")
+            return False
+
+        # Fit copula model
+        model = fit_copula_model(
+            formation_prices,
+            pair,
+            reference_symbol=self.config["strategy"]["reference_symbol"],
+        )
+
+        if model is None:
+            logger.error("Failed to fit copula model")
+            return False
+
+        # Update state
+        self.current_pair = pair
+        self.current_model = model
+
+        self.state.formation_start = formation_start.isoformat()
+        self.state.formation_end = formation_end.isoformat()
+        self.state.trading_start = formation_end.isoformat()
+        self.state.trading_end = (formation_end + pd.Timedelta(days=self.config["strategy"]["trading_days"])).isoformat()
+        self.state.current_pair = asdict(pair)
+
+        self._save_state()
+
+        logger.info(f"Formation complete. Trading until {self.state.trading_end}")
+        return True
+
+    def execute_signal(self, signal: TradingSignal) -> None:
+        """Execute trading signal.
+
+        Args:
+            signal: Trading signal
+        """
+        if signal.action == "WAIT":
+            return
+
+        ref_sym = self.config["strategy"]["reference_symbol"]
+        sym1 = self.current_pair.symbol1
+        sym2 = self.current_pair.symbol2
+
+        # Get current prices
+        prices = self.buffer.get_latest_prices()
+        p_ref = prices[ref_sym]
+        p1 = prices[sym1]
+        p2 = prices[sym2]
+
+        # Calculate position sizes
+        q1, q2 = calculate_position_sizes(
+            self.current_model.beta1,
+            self.current_model.beta2,
+            p1,
+            p2,
+            self.config["strategy"]["capital_per_side"],
+        )
+
+        if signal.action == "CLOSE":
+            # Close all positions
+            logger.info("Closing positions")
+            self.client.close_position(sym1)
+            self.client.close_position(sym2)
+            self.state.active_position = None
+            self._save_state()
+
+        elif signal.action == "LONG_S1_SHORT_S2":
+            # Long beta2*P2, Short beta1*P1 (Table 4)
+            logger.info(f"Opening: LONG {sym2} ({q2:.4f}), SHORT {sym1} ({q1:.4f})")
+
+            try:
+                self.client.place_market_order(sym2, "Buy", abs(q2))
+                self.client.place_market_order(sym1, "Sell", abs(q1))
+
+                self.state.active_position = {
+                    "long_symbol": sym2,
+                    "short_symbol": sym1,
+                    "long_qty": abs(q2),
+                    "short_qty": abs(q1),
+                    "entry_time": signal.timestamp.isoformat(),
+                }
+                self.state.trades_count += 1
+                self._save_state()
+
+            except Exception as e:
+                logger.error(f"Failed to execute order: {e}")
+
+        elif signal.action == "SHORT_S1_LONG_S2":
+            # Short beta2*P2, Long beta1*P1 (Table 4)
+            logger.info(f"Opening: SHORT {sym2} ({q2:.4f}), LONG {sym1} ({q1:.4f})")
+
+            try:
+                self.client.place_market_order(sym2, "Sell", abs(q2))
+                self.client.place_market_order(sym1, "Buy", abs(q1))
+
+                self.state.active_position = {
+                    "long_symbol": sym1,
+                    "short_symbol": sym2,
+                    "long_qty": abs(q1),
+                    "short_qty": abs(q2),
+                    "entry_time": signal.timestamp.isoformat(),
+                }
+                self.state.trades_count += 1
+                self._save_state()
+
+            except Exception as e:
+                logger.error(f"Failed to execute order: {e}")
+
+    def run_trading_loop(self) -> None:
+        """Main trading loop."""
+        logger.info("=== Starting Trading Loop ===")
+
+        interval_str = self.config["strategy"]["interval"]
+        interval_map = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1H": 3600, "2H": 7200, "4H": 14400}
+        interval_seconds = interval_map.get(interval_str, 300)  # Default to 5m if unknown
+
+        while True:
+            try:
+                # Update data
+                self.update_data()
+
+                # Check if we need new formation period
+                if self.should_start_new_cycle():
+                    # Close any open positions at end of trading period
+                    if self.state.active_position:
+                        logger.info("End of trading period, closing positions")
+                        self.execute_signal(
+                            TradingSignal(action="CLOSE", h1_2=0.5, h2_1=0.5, timestamp=pd.Timestamp.now(tz="UTC"))
+                        )
+
+                    # Run new formation
+                    success = self.run_formation_period()
+                    if not success:
+                        logger.warning("Formation failed, waiting 1 hour before retry")
+                        time.sleep(3600)
+                        continue
+
+                # Generate signal
+                if self.current_model and self.current_pair:
+                    prices = self.buffer.get_latest_prices()
+
+                    signal = generate_signal(
+                        prices,
+                        self.current_model,
+                        self.current_pair,
+                        self.config["strategy"]["reference_symbol"],
+                        self.config["strategy"]["alpha1"],
+                        self.config["strategy"]["alpha2"],
+                    )
+
+                    logger.info(f"Signal: {signal.action} (h1|2={signal.h1_2:.3f}, h2|1={signal.h2_1:.3f})")
+
+                    # Execute if not waiting
+                    if signal.action != "WAIT":
+                        self.execute_signal(signal)
+
+                # Update state timestamp
+                self.state.last_update = pd.Timestamp.now(tz="UTC").isoformat()
+                self._save_state()
+
+                # Save buffer periodically
+                if self.state.trades_count % 10 == 0:
+                    self.buffer.save(Path(self.config["data"]["buffer_file"]))
+
+                # Wait for next interval
+                time.sleep(interval_seconds)
+
+            except KeyboardInterrupt:
+                logger.info("Shutting down...")
+                break
+            except Exception as e:
+                logger.error(f"Error in trading loop: {e}", exc_info=True)
+                time.sleep(60)  # Wait 1 minute before retry
+
+    def run(self) -> None:
+        """Main entry point."""
+        logger.info("Starting Live Trader")
+
+        # Check account balance
+        balance = self.client.get_account_balance()
+        logger.info(f"Account balance: {balance}")
+
+        # Initialize data
+        self.initialize_data()
+
+        # Start trading
+        self.run_trading_loop()
+
+
+def main():
+    """CLI entry point."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Live copula-based pair trading")
+    parser.add_argument("--config", default="config.yaml", help="Path to config file")
+    args = parser.parse_args()
+
+    trader = LiveTrader(config_path=args.config)
+    trader.run()
+
+
+if __name__ == "__main__":
+    main()
+
+
+---
+src/main.py
+---
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import coint
+from scipy import stats
+from copulae import EmpiricalCopula, ClaytonCopula, GumbelCopula, GaussianCopula
+from copulae.iterators import TotalStepIter
+# Note: For full Tawn/BB7/BB8 support, more specialized libraries or 
+# custom implementation of partial derivatives (h-functions) are needed.
+
+class CopulaPairsTrading:
+    def __init__(self, alpha1=0.20, alpha2=0.10):
+        self.alpha1 = alpha1  # Entry threshold
+        self.alpha2 = alpha2  # Exit threshold
+        self.beta1 = None
+        self.beta2 = None
+        self.marginal1 = None
+        self.marginal2 = None
+        self.fitted_copula = None
+
+    def calculate_spread(self, ref_price, asset_price):
+        """Eq 31: Si = P_ref - beta * P_i"""
+        X = sm.add_constant(asset_price)
+        model = sm.OLS(ref_price, X).fit()
+        beta = model.params[1]
+        spread = ref_price - (beta * asset_price)
+        return spread, beta
+
+    def fit_marginals(self, spread):
+        """Finds best fitting distribution (Gaussian, Student-T, or Cauchy)"""
+        dists = [stats.norm, stats.t, stats.cauchy]
+        best_aic = np.inf
+        best_dist = None
+        
+        for d in dists:
+            params = d.fit(spread)
+            log_lik = np.sum(np.log(d.pdf(spread, *params)))
+            k = len(params)
+            aic = 2*k - 2*log_lik
+            if aic < best_aic:
+                best_aic = aic
+                best_dist = (d, params)
+        return best_dist
+
+    def get_h_functions(self, u1, u2):
+        """
+        Calculates conditional probabilities (h-functions)
+        h1|2 = dC(u1, u2)/du2
+        h2|1 = dC(u1, u2)/du1
+        """
+        # Using a Gaussian Copula as a proxy for the implementation example
+        # In the paper, they use Tawn, BB7, BB8, etc.
+        u = np.column_stack([u1, u2])
+        # This is a simplified numerical approximation of the partial derivative
+        delta = 1e-5
+        
+        # h1|2 approximation
+        h1_2 = (self.fitted_copula.cdf([u1, u2 + delta]) - 
+                self.fitted_copula.cdf([u1, u2 - delta])) / (2 * delta)
+        
+        # h2|1 approximation
+        h2_1 = (self.fitted_copula.cdf([u1 + delta, u2]) - 
+                self.fitted_copula.cdf([u1 - delta, u2])) / (2 * delta)
+        
+        return h1_2, h2_1
+
+    def formation_period(self, ref_data, p1_data, p2_data):
+        # 1. Generate Spreads
+        s1, self.beta1 = self.calculate_spread(ref_data, p1_data)
+        s2, self.beta2 = self.calculate_spread(ref_data, p2_data)
+        
+        # 2. Fit Marginals
+        self.marginal1 = self.fit_marginals(s1)
+        self.marginal2 = self.fit_marginals(s2)
+        
+        # 3. Transform to Uniform (PIT)
+        u1 = self.marginal1[0].cdf(s1, *self.marginal1[1])
+        u2 = self.marginal2[0].cdf(s2, *self.marginal2[1])
+        
+        # 4. Fit Copula (Simplified to Gaussian for this snippet)
+        data = np.column_stack([u1, u2])
+        self.fitted_copula = GaussianCopula(dim=2)
+        self.fitted_copula.fit(data)
+        
+        print("Formation Complete. Copula Rho:", self.fitted_copula.params)
+
+    def generate_signals(self, ref_tick, p1_tick, p2_tick):
+        """Trading Rules from Table 3 and 4"""
+        # Current Spreads
+        s1_t = ref_tick - (self.beta1 * p1_tick)
+        s2_t = ref_tick - (self.beta2 * p2_tick)
+        
+        # Current Uniforms
+        u1_t = self.marginal1[0].cdf(s1_t, *self.marginal1[1])
+        u2_t = self.marginal2[0].cdf(s2_t, *self.marginal2[1])
+        
+        # Conditional Probabilities
+        h1_2, h2_1 = self.get_h_functions(u1_t, u2_t)
+        
+        # Trading Logic
+        if h1_2 < self.alpha1 and h2_1 > (1 - self.alpha1):
+            return "LONG_S1_SHORT_S2" # Buy P2, Sell P1 (Eq in Table 4)
+        elif h1_2 > (1 - self.alpha1) and h2_1 < self.alpha1:
+            return "SHORT_S1_LONG_S2" # Sell P2, Buy P1
+        elif abs(h1_2 - 0.5) < self.alpha2 and abs(h2_1 - 0.5) < self.alpha2:
+            return "CLOSE"
+        else:
+            return "WAIT"
+
+# --- Mock Execution ---
+# Generate dummy crypto data
+np.random.seed(42)
+n = 1000
+btc = 100 + np.cumsum(np.random.normal(0, 1, n)) # Reference Asset
+eth = 0.5 * btc + np.random.normal(0, 2, n)      # Cointegrated Alt 1
+ltc = 0.2 * btc + np.random.normal(0, 1, n)      # Cointegrated Alt 2
+
+# Split into Formation (750) and Trading (250)
+algo = CopulaPairsTrading(alpha1=0.20, alpha2=0.10)
+algo.formation_period(btc[:750], eth[:750], ltc[:750])
+
+# Simulate Trading
+for i in range(750, 760):
+    signal = algo.generate_signals(btc[i], eth[i], ltc[i])
+    print(f"Step {i}: Signal = {signal}")
+
+---
+src/okx_client.py
+---
+"""OKX API client for live trading.
+
+Handles market data streaming, order execution, and position management
+for OKX USDT-margined perpetual futures.
+"""
+
+from __future__ import annotations
+
+import base64
+import hmac
+import hashlib
+import json
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import requests
+from loguru import logger
+import pandas as pd
+
+
+@dataclass
+class Position:
+    """Current position information."""
+
+    symbol: str
+    side: str  # "long" or "short"
+    size: float
+    entry_price: float
+    unrealized_pnl: float
+    leverage: float
+
+
+@dataclass
+class OrderResult:
+    """Result of order placement."""
+
+    order_id: str
+    symbol: str
+    side: str
+    qty: float
+    price: float | None
+    status: str
+
+
+class OKXClient:
+    """Wrapper for OKX API interactions using direct HTTP requests."""
+
+    BASE_URL = "https://www.okx.com"
+
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        passphrase: str,
+        demo: bool = True,
+    ):
+        """Initialize OKX client.
+
+        Args:
+            api_key: OKX API key
+            api_secret: OKX API secret
+            passphrase: OKX API passphrase
+            demo: If True, use demo trading; otherwise use live
+        """
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.passphrase = passphrase
+        self.demo = demo
+
+        logger.info(f"Initialized OKX client (demo={demo})")
+
+    # ------------------------------------------------------------------ #
+    #  Authentication helpers
+    # ------------------------------------------------------------------ #
+    def _get_timestamp(self) -> str:
+        """Generate ISO 8601 timestamp."""
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    def _sign(self, timestamp: str, method: str, request_path: str, body: str = "") -> str:
+        """Create HMAC SHA256 signature required by OKX API."""
+        message = timestamp + method.upper() + request_path + body
+        mac = hmac.new(
+            self.api_secret.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        )
+        return base64.b64encode(mac.digest()).decode("utf-8")
+
+    def _headers(self, method: str, request_path: str, body: str = "") -> dict:
+        """Build authenticated request headers."""
+        timestamp = self._get_timestamp()
+        signature = self._sign(timestamp, method, request_path, body)
+
+        headers = {
+            "OK-ACCESS-KEY": self.api_key,
+            "OK-ACCESS-SIGN": signature,
+            "OK-ACCESS-TIMESTAMP": timestamp,
+            "OK-ACCESS-PASSPHRASE": self.passphrase,
+            "Content-Type": "application/json",
+        }
+
+        if self.demo:
+            headers["x-simulated-trading"] = "1"
+
+        return headers
+
+    def _request(self, method: str, path: str, params: dict = None, data: dict = None) -> dict:
+        """Send authenticated request."""
+        try:
+            if params:
+                query = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
+                request_path = f"{path}?{query}" if query else path
+            else:
+                request_path = path
+
+            body = json.dumps(data) if data else ""
+            headers = self._headers(method, request_path, body)
+            url = self.BASE_URL + request_path
+
+            if method == "GET":
+                response = requests.get(url, headers=headers)
+            else:
+                response = requests.post(url, headers=headers, data=body)
+
+            result = response.json()
+            
+            if str(result.get("code")) != "0":
+                raise ValueError(f"API Error {result.get('code')}: {result.get('msg')}")
+                
+            return result
+
+        except Exception as e:
+            logger.error(f"Request failed: {method} {path} - {e}")
+            raise
+
+    def _safe_float(self, value: Any) -> float:
+        """Safely convert value to float, handling empty strings."""
+        if not value:
+            return 0.0
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+
+    # ------------------------------------------------------------------ #
+    #  Public Interface
+    # ------------------------------------------------------------------ #
+
+    def get_account_balance(self) -> dict[str, float]:
+        """Get USDT account balance.
+
+        Returns:
+            Dict with 'total', 'available', 'used' balances in USDT
+        """
+        try:
+            result = self._request("GET", "/api/v5/account/balance", {"ccy": "USDT"})
+            
+            if not result.get("data"):
+                return {"total": 0.0, "available": 0.0, "used": 0.0}
+
+            details = result["data"][0].get("details", [])
+            for detail in details:
+                if detail["ccy"] == "USDT":
+                    total = self._safe_float(detail.get("eq"))
+                    available = self._safe_float(detail.get("availEq"))
+                    return {
+                        "total": total,
+                        "available": available,
+                        "used": total - available,
+                    }
+
+            return {"total": 0.0, "available": 0.0, "used": 0.0}
+
+        except Exception as e:
+            logger.error(f"Failed to get account balance: {e}")
+            raise
+
+    def get_klines(
+        self,
+        symbol: str,
+        interval: str = "5m",
+        limit: int = 100,
+    ) -> pd.DataFrame:
+        """Fetch historical kline (candlestick) data."""
+        try:
+            result = self._request("GET", "/api/v5/market/candles", {
+                "instId": symbol,
+                "bar": interval,
+                "limit": str(limit)
+            })
+
+            klines = result.get("data", [])
+            if not klines:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(
+                klines,
+                columns=["timestamp", "open", "high", "low", "close", "volume", "volCcy", "volCcyQuote", "confirm"],
+            )
+
+            # Convert types
+            df["timestamp"] = pd.to_datetime(df["timestamp"].astype(int), unit="ms", utc=True)
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = df[col].apply(self._safe_float)
+
+            # OKX returns newest first, so reverse
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Failed to get klines for {symbol}: {e}")
+            raise
+
+    def get_all_klines(
+        self,
+        symbol: str,
+        interval: str = "5m",
+        days: int = 30,
+    ) -> pd.DataFrame:
+        """Fetch historical klines for multiple days (handles pagination)."""
+        interval_map = {"1m": 1, "5m": 5, "15m": 15, "1H": 60, "4H": 240, "1D": 1440}
+        interval_minutes = interval_map.get(interval, 5)
+        candles_per_day = (24 * 60) // interval_minutes
+        total_candles = days * candles_per_day
+
+        all_data = []
+        iterations = min((total_candles // 100) + 1, 50)  # Max 50 calls
+        
+        last_ts = None
+        
+        for _ in range(iterations):
+            params = {
+                "instId": symbol,
+                "bar": interval,
+                "limit": "100"
+            }
+            if last_ts:
+                params["after"] = last_ts
+                
+            try:
+                result = self._request("GET", "/api/v5/market/candles", params)
+                klines = result.get("data", [])
+                
+                if not klines:
+                    break
+                    
+                df = pd.DataFrame(
+                    klines,
+                    columns=["timestamp", "open", "high", "low", "close", "volume", "volCcy", "volCcyQuote", "confirm"],
+                )
+                
+                # Update last timestamp for next page (switched to 'after' pagination)
+                last_ts = klines[-1][0] 
+                
+                all_data.append(df)
+                time.sleep(0.2)
+                
+            except Exception as e:
+                logger.error(f"Error fetching klines: {e}")
+                break
+
+        if not all_data:
+            return pd.DataFrame()
+
+        # Combine, process, and sort
+        combined = pd.concat(all_data, ignore_index=True)
+        
+        # Convert types
+        combined["timestamp"] = pd.to_datetime(combined["timestamp"].astype(int), unit="ms", utc=True)
+        for col in ["open", "high", "low", "close", "volume"]:
+            combined[col] = combined[col].apply(self._safe_float)
+            
+        combined = combined.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+        combined = combined[["timestamp", "open", "high", "low", "close", "volume"]]
+
+        # Trim to requested days
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)
+        combined = combined[combined["timestamp"] >= cutoff]
+
+        return combined
+
+    def get_positions(self) -> list[Position]:
+        """Get all open positions."""
+        try:
+            result = self._request("GET", "/api/v5/account/positions")
+            
+            positions = []
+            for pos in result.get("data", []):
+                size = self._safe_float(pos.get("pos"))
+                if size == 0:
+                    continue
+
+                positions.append(
+                    Position(
+                        symbol=pos["instId"],
+                        side="long" if size > 0 else "short",
+                        size=abs(size),
+                        entry_price=self._safe_float(pos.get("avgPx")),
+                        unrealized_pnl=self._safe_float(pos.get("upl")),
+                        leverage=self._safe_float(pos.get("lever")) or 1.0,
+                    )
+                )
+            return positions
+
+        except Exception as e:
+            logger.error(f"Failed to get positions: {e}")
+            raise
+
+    def place_market_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+    ) -> OrderResult:
+        """Place a market order."""
+        try:
+            data = {
+                "instId": symbol,
+                "tdMode": "cross",
+                "side": side.lower(),
+                "ordType": "market",
+                "sz": str(abs(int(qty))),
+            }
+            # For header mode, need posSide
+            # Assuming 'net' mode for simplicity unless specified otherwise in config
+            # But OKX often defaults to 'long'/'short' posSide for futures in hedge mode
+            # We'll try auto-detection or default to 'net' if possible, but 
+            # safe assumption for demo might be to just try simple order first.
+            
+            # Note: User received 'account mode' error. 
+            # Ideally we should check account config.
+            
+            result = self._request("POST", "/api/v5/trade/order", data=data)
+            
+            order_data = result["data"][0]
+            logger.info(f"Placed {side} market order: {symbol} qty={qty} orderId={order_data.get('ordId')}")
+
+            return OrderResult(
+                order_id=order_data.get("ordId", ""),
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=None,
+                status=order_data.get("sCode", ""),
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to place order {symbol} {side} {qty}: {e}")
+            raise
+
+    def close_position(self, symbol: str) -> OrderResult | None:
+        """Close an open position."""
+        positions = self.get_positions()
+        for pos in positions:
+            if pos.symbol == symbol:
+                # Use close-position endpoint for safer closing
+                try:
+                    data = {
+                        "instId": symbol,
+                        "mgnMode": "cross", 
+                    }
+                    if pos.side == "long":
+                        data["posSide"] = "long"
+                    elif pos.side == "short":
+                         data["posSide"] = "short"
+                    else:
+                        data["posSide"] = "net"
+
+                    result = self._request("POST", "/api/v5/trade/close-position", data=data)
+                     # Return generic success result
+                    return OrderResult(
+                        order_id="close_pos", symbol=symbol, side="close", qty=pos.size, price=None, status="filled"
+                    )
+
+                except Exception as e:
+                     logger.error(f"Error using close-position: {e}, failing back to market order")
+                     # Fallback logic
+                     opposite_side = "sell" if pos.side == "long" else "buy"
+                     return self.place_market_order(symbol, opposite_side, pos.size)
+
+        logger.warning(f"No open position found for {symbol}")
+        return None
+
+    def get_latest_price(self, symbol: str) -> float:
+        """Get latest market price for a symbol."""
+        try:
+            result = self._request("GET", "/api/v5/market/ticker", {"instId": symbol})
+            return self._safe_float(result["data"][0]["last"])
+        except Exception as e:
+            logger.error(f"Failed to get price for {symbol}: {e}")
+            raise
+
+
+---
+src/paper_client.py
+---
+import json
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import pandas as pd
+import yfinance as yf
+from loguru import logger
+
+
+class PaperTradingClient:
+    """
+    Simulates a trading client for paper trading using Yahoo Finance data.
+    Mimics the interface of OKXClient for seamless integration.
+    """
+
+    def __init__(
+        self,
+        initial_capital: float = 100000.0,
+        transaction_fee: float = 0.001,
+        state_file: str = "data/paper_wallet.json",
+    ):
+        """
+        Initialize the paper trading client.
+
+        Args:
+            initial_capital: Starting capital in USD/USDT.
+            transaction_fee: Fee rate per trade (e.g., 0.001 for 0.1%).
+            state_file: Path to save/load portfolio state.
+        """
+        self.initial_capital = initial_capital
+        self.transaction_fee = transaction_fee
+        self.state_file = Path(state_file)
+        
+        # Portfolio state
+        self.balance = initial_capital
+        self.positions: Dict[str, float] = {}  # Symbol -> Quantity
+        self.history: List[Dict] = []  # Trade history
+
+        self._load_state()
+
+    def _load_state(self):
+        """Load portfolio state from disk."""
+        if self.state_file.exists():
+            try:
+                with open(self.state_file, "r") as f:
+                    data = json.load(f)
+                    self.balance = data.get("balance", self.initial_capital)
+                    self.positions = data.get("positions", {})
+                    self.history = data.get("history", [])
+                    logger.info(f"Loaded paper wallet: Balance=${self.balance:,.2f}, Positions={len(self.positions)}")
+            except Exception as e:
+                logger.error(f"Failed to load paper wallet: {e}")
+        else:
+            logger.info(f"Initialized new paper wallet with ${self.initial_capital:,.2f}")
+            self._save_state()
+
+    def _save_state(self):
+        """Save portfolio state to disk."""
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "balance": self.balance,
+                "positions": self.positions,
+                "history": self.history,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            with open(self.state_file, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save paper wallet: {e}")
+
+    def get_market_price(self, symbol: str) -> float:
+        """Get current market price for a symbol using yfinance."""
+        try:
+            ticker = yf.Ticker(symbol)
+            # Try to get ask/bid or regular market price
+            # fast_info is faster but sometimes less detailed
+            price = ticker.fast_info.last_price
+            if price is None:
+                # Fallback to history if fast_info fails
+                hist = ticker.history(period="1d", interval="1m")
+                if not hist.empty:
+                    price = hist["Close"].iloc[-1]
+                else:
+                    raise ValueError(f"No price data found for {symbol}")
+            return float(price)
+        except Exception as e:
+            logger.error(f"Error fetching price for {symbol}: {e}")
+            raise
+
+    # --- Data Fetching Methods (Mimicking OKXClient) ---
+
+    def get_all_klines(self, symbol: str, interval: str, days: int = 30) -> pd.DataFrame:
+        """
+        Fetch historical klines from Yahoo Finance.
+        
+        Args:
+            symbol: Ticker symbol (e.g., 'SPY', 'AAPL').
+            interval: Candle interval (e.g., '5m', '1h', '1d').
+            days: Number of lookback days.
+            
+        Returns:
+            DataFrame with columns: [timestamp, open, high, low, close, volume]
+        """
+        yf_interval = interval
+        if interval == "1M": yf_interval = "1mo"
+        
+        start_date = datetime.now() - timedelta(days=days)
+        logger.info(f"Fetching {days} days of {interval} data for {symbol} from Yahoo...")
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Use download for potentially more robust fetching than ticker.history
+                df = yf.download(
+                    tickers=symbol,
+                    start=start_date,
+                    interval=yf_interval,
+                    progress=False,
+                    threads=False,
+                    group_by='ticker'
+                )
+                
+                if df.empty:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Attempt {attempt+1} failed for {symbol}, retrying...")
+                        import time
+                        time.sleep(2)
+                        continue
+                    logger.warning(f"No data returned for {symbol} after {max_retries} attempts")
+                    return pd.DataFrame()
+                
+                # Standardize columns (yf.download with single ticker might have MultiIndex or simple columns)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(1)
+                
+                df = df.rename(columns={
+                    "Open": "open",
+                    "High": "high",
+                    "Low": "low",
+                    "Close": "close",
+                    "Volume": "volume"
+                })
+                
+                # Ensure index is timezone-aware UTC
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize("UTC")
+                else:
+                    df.index = df.index.tz_convert("UTC")
+                
+                # Reset index to get timestamp column
+                df = df.reset_index()
+                # Rename first column to timestamp
+                df = df.rename(columns={df.columns[0]: "timestamp"})
+                    
+                return df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Attempt {attempt+1} for {symbol} failed with: {e}. Retrying...")
+                    import time
+                    time.sleep(2)
+                else:
+                    logger.error(f"Failed to fetch history for {symbol} after {max_retries} attempts: {e}")
+                    return pd.DataFrame()
+        return pd.DataFrame()
+
+    def get_klines(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
+        """
+        Fetch recent klines.
+        
+        Args:
+            limit: Number of candles (approximate for yfinance).
+        """
+        # yfinance doesn't support 'limit' directly cleanly for small intraday counts 
+        # without 'period'. We'll use 'period' based on interval.
+        
+        period = "1d"
+        if interval in ["1m", "2m", "5m"]:
+            period = "1d" # Min period for intraday is 1d usually
+        elif interval in ["1h", "90m"]:
+            period = "5d"
+        elif interval == "1d":
+            period = "1mo" # Fetch a month to be safe
+            
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period=period, interval=interval)
+            
+            if df.empty:
+                return pd.DataFrame()
+                
+            df = df.rename(columns={
+                "Open": "open",
+                "High": "high",
+                "Low": "low",
+                "Close": "close",
+                "Volume": "volume"
+            })
+            
+            if df.index.tz is None:
+                df.index = df.index.tz_localize("UTC")
+            else:
+                df.index = df.index.tz_convert("UTC")
+            
+            # Reset index and cleanup
+            df = df.reset_index()
+            df = df.rename(columns={df.columns[0]: "timestamp"})
+            
+            # Return only requested limit
+            return df[["timestamp", "open", "high", "low", "close", "volume"]].tail(limit)
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch klines for {symbol}: {e}")
+            return pd.DataFrame()
+
+    def get_account_balance(self) -> Dict[str, float]:
+        """
+        Return account balance details.
+        
+        Returns:
+             Dict with 'totalEq' (Total Equity), 'usedEq' (Used Margin/Position Value)
+        """
+        # Calculate current value of positions
+        position_value = 0.0
+        for sym, qty in self.positions.items():
+            try:
+                price = self.get_market_price(sym)
+                position_value += abs(qty) * price
+            except:
+                pass # Skip if pricing fails
+                
+        total_equity = self.balance
+        # Note: In a real margin account, equity = cash + unrealized_pnl.
+        # Here we simplify: cash balance tracks realized PnL. 
+        # Unrealized PnL is implicit if we mark-to-market.
+        # But this simple paper trader might just track cash + cost basis or current value?
+        # Let's stick to: Total Equity = Cash + Current Value of Positions
+        
+        # Actually, for standard spot trading: Equity = Cash + Value of Assets.
+        # For Pairs Trading (Long/Short), we need margin.
+        # Let's assume 'balance' is the Cash/Collateral.
+        # Shorting adds cash (proceeds) but creates a liability.
+        # Longing removes cash.
+        
+        # Simplified Model:
+        # We track 'balance' as Net Liquidation Value (NLV) ideally.
+        # But simpler: Balance = Cash. 
+        # Long purchase: Cash -= Cost. Position += Qty.
+        # Short sale: Cash += Proceeds. Position -= Qty.
+        # Total Equity = Cash + Sum(Position * Price)
+        
+        current_val = 0.0
+        for sym, qty in self.positions.items():
+            if qty == 0: continue
+            price = self.get_market_price(sym)
+            current_val += qty * price
+            
+        equity = self.balance + current_val
+        
+        return {
+            "totalEq": equity,
+            "isoEq": 0.0, # Isolated margin equity (unused)
+            "adjEq": equity, # Adjusted equity
+            "ordFroz": 0.0, # Frozen in orders
+            "imr": 0.0, # Initial margin requirement
+            "mmr": 0.0, # Maintenance margin requirement
+            "mgnRatio": 0.0
+        }
+
+    # --- Execution Methods ---
+
+    def place_market_order(self, symbol: str, side: str, amount: float) -> Optional[Dict]:
+        """
+        Place a market order.
+        
+        Args:
+            symbol: Asset symbol.
+            side: "Buy" or "Sell".
+            amount: Quantity to buy/sell (in shares/units).
+        """
+        try:
+            price = self.get_market_price(symbol)
+            cost = price * amount
+            fee = cost * self.transaction_fee
+            
+            # Update Portfolio
+            if side.lower() == "buy":
+                # Buy: Cash decreases, Position increases
+                self.balance -= (cost + fee)
+                self.positions[symbol] = self.positions.get(symbol, 0.0) + amount
+                logger.info(f"PAPER TRADE: Bought {amount} {symbol} @ {price:.2f} (Fee: {fee:.2f})")
+            else:
+                # Sell: Cash increases, Position decreases
+                self.balance += (cost - fee)
+                self.positions[symbol] = self.positions.get(symbol, 0.0) - amount
+                logger.info(f"PAPER TRADE: Sold {amount} {symbol} @ {price:.2f} (Fee: {fee:.2f})")
+                
+            # Clean up zero positions
+            if abs(self.positions.get(symbol, 0.0)) < 1e-6:
+                del self.positions[symbol]
+                
+            # Log Trade
+            trade_record = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "symbol": symbol,
+                "side": side,
+                "amount": amount,
+                "price": price,
+                "fee": fee
+            }
+            self.history.append(trade_record)
+            self._save_state()
+            
+            return {"ordId": "paper_" + datetime.now().strftime("%Y%m%d%H%M%S"), "state": "filled"}
+            
+        except Exception as e:
+            logger.error(f"Failed to place paper order: {e}")
+            raise
+
+    def close_position(self, symbol: str):
+        """Close existing position for symbol."""
+        qty = self.positions.get(symbol, 0.0)
+        if abs(qty) > 0:
+            side = "Sell" if qty > 0 else "Buy"
+            self.place_market_order(symbol, side, abs(qty))
+
+
+
+---
+src/run_paper_grid.py
+---
+"""Run a small experiment grid similar to the paper.
+
+The paper evaluates alpha1 in {10%, 15%, 20%} with alpha2 fixed at 10%.
+
+Example:
+  /path/to/.venv/bin/python -m src.run_paper_grid --data data/binance_futures_1h --interval 1h
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import asdict
+
+import pandas as pd
+
+from src.backtest_reference_copula import BacktestConfig, main as run_backtest
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Run paper-style alpha grid")
+    p.add_argument("--data", required=True)
+    p.add_argument("--interval", default="1h")
+    p.add_argument("--fee", type=float, default=0.0004)
+    p.add_argument("--capital", type=float, default=20000.0)
+    p.add_argument(
+        "--log-prices",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use log prices for cointegration/spreads (default: enabled)",
+    )
+    p.add_argument("--start", default=None)
+    p.add_argument("--end", default=None)
+    return p.parse_args(argv)
+
+
+def run_one(args: argparse.Namespace, alpha1: float) -> dict:
+    argv = [
+        "--data",
+        args.data,
+        "--interval",
+        args.interval,
+        "--alpha1",
+        str(alpha1),
+        "--alpha2",
+        "0.10",
+        "--fee",
+        str(args.fee),
+        "--capital",
+        str(args.capital),
+    ]
+    if args.log_prices:
+        argv += ["--log-prices"]
+    else:
+        argv += ["--no-log-prices"]
+    if args.start:
+        argv += ["--start", args.start]
+    if args.end:
+        argv += ["--end", args.end]
+
+    # backtest_reference_copula prints its own summary; we want a programmatic one.
+    # For now, just run it and let it write outputs; metrics will be printed.
+    run_backtest(argv)
+    return {"alpha1": alpha1}
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+
+    for a1 in (0.10, 0.15, 0.20):
+        print("\n" + "=" * 20 + f" alpha1={a1:.2f} " + "=" * 20)
+        run_one(args, a1)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+---
+src/stats_tests.py
+---
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller, coint
+
+
+@dataclass(frozen=True)
+class CointegrationResult:
+    beta: float
+    spread: pd.Series
+    eg_pvalue: float
+    adf_pvalue: float
+    kss_stat: float
+
+
+def kss_estar_tstat(series: np.ndarray, *, max_lags: int = 12) -> float:
+    """Kapetanios-Shin-Snell (KSS) nonlinear unit root test (ESTAR) t-statistic.
+
+    We implement the commonly used auxiliary regression:
+      Δy_t = δ y_{t-1}^3 + Σ_{i=1..p} φ_i Δy_{t-i} + ε_t
+
+    and return the t-statistic for δ.
+
+    The paper uses an asymptotic critical value of -1.92 at 10%.
+    """
+
+    y = np.asarray(series, dtype=float)
+    y = y[np.isfinite(y)]
+    if y.size < 200:
+        return float("nan")
+
+    # KSS is typically applied to demeaned (and often standardized) series.
+    y = y - float(np.mean(y))
+    s = float(np.std(y, ddof=1))
+    if s > 0:
+        y = y / s
+
+    dy = np.diff(y)
+    y_lag = y[:-1]
+    y_cub = y_lag ** 3
+
+    best_aic = float("inf")
+    best_t = float("nan")
+
+    for p in range(0, max_lags + 1):
+        # Build design matrix: [y_{t-1}^3, Δy_{t-1},...,Δy_{t-p}]
+        # Align so target is Δy_t.
+        if p == 0:
+            X = y_cub.reshape(-1, 1)
+            y_target = dy
+        else:
+            if dy.size <= p:
+                break
+            y_target = dy[p:]
+            x0 = y_cub[p:]
+            lagged = np.column_stack([dy[p - i : -i] for i in range(1, p + 1)])
+            X = np.column_stack([x0, lagged])
+
+        # No intercept in the KSS auxiliary regression.
+        try:
+            res = sm.OLS(y_target, X).fit()
+        except Exception:
+            continue
+
+        aic = float(res.aic)
+        if aic < best_aic:
+            best_aic = aic
+            # δ is the first coefficient.
+            try:
+                best_t = float(res.tvalues[0])
+            except Exception:
+                best_t = float("nan")
+
+    return best_t
+
+
+def estimate_beta_no_intercept(reference: pd.Series, asset: pd.Series) -> float:
+    """Estimate beta in reference ≈ beta * asset (no intercept).
+
+    The paper's spread uses S = Pref - beta * Pi (Eq. 31).
+    """
+    x = asset.to_numpy(dtype=float)
+    y = reference.to_numpy(dtype=float)
+    # OLS slope through origin: beta = (x'y)/(x'x)
+    denom = float(np.dot(x, x))
+    if denom == 0.0:
+        return float("nan")
+    return float(np.dot(x, y) / denom)
+
+
+def compute_spread(reference: pd.Series, asset: pd.Series, *, use_intercept: bool) -> tuple[pd.Series, float]:
+    ref, ast = reference.align(asset, join="inner")
+    if use_intercept:
+        X = sm.add_constant(ast.to_numpy(dtype=float))
+        model = sm.OLS(ref.to_numpy(dtype=float), X).fit()
+        beta = float(model.params[1])
+        intercept = float(model.params[0])
+        spread = ref - (intercept + beta * ast)
+        # Note: Eq. (31) has no intercept; this option matches the residual definition.
+        return spread.rename("spread"), beta
+
+    beta = estimate_beta_no_intercept(ref, ast)
+    spread = (ref - beta * ast).rename("spread")
+    return spread, beta
+
+
+def cointegration_with_reference(
+    reference: pd.Series,
+    asset: pd.Series,
+    *,
+    eg_alpha: float = 0.10,
+    adf_alpha: float = 0.10,
+    kss_critical_10pct: float = -1.92,
+    use_intercept: bool = False,
+) -> CointegrationResult | None:
+    """Returns diagnostics if the asset is cointegrated with reference.
+
+    Practical interpretation (matching the paper's assumptions section):
+    - Engle-Granger p-value < 10%
+    - ADF p-value on spread < 10%
+    - KSS test statistic < -1.92 (10% asymptotic critical value)
+
+    If any condition fails, returns None.
+    """
+
+    ref, ast = reference.align(asset, join="inner")
+    ref = ref.dropna()
+    ast = ast.dropna()
+    ref, ast = ref.align(ast, join="inner")
+    if len(ref) < 200:
+        return None
+
+    spread, beta = compute_spread(ref, ast, use_intercept=use_intercept)
+    spread = spread.dropna()
+    if len(spread) < 200 or not np.isfinite(beta):
+        return None
+
+    # EG test directly on price levels.
+    # statsmodels.coint assumes y0 and y1 are I(1); we still use it as the paper does.
+    try:
+        _stat, pvalue, _crit = coint(ref.to_numpy(dtype=float), ast.to_numpy(dtype=float))
+        eg_pvalue = float(pvalue)
+    except Exception:
+        return None
+
+    try:
+        adf_pvalue = float(adfuller(spread.to_numpy(dtype=float), autolag="AIC")[1])
+    except Exception:
+        return None
+
+    try:
+        kss_stat = float(kss_estar_tstat(spread.to_numpy(dtype=float)))
+    except Exception:
+        return None
+
+    if eg_pvalue >= eg_alpha:
+        return None
+    if adf_pvalue >= adf_alpha:
+        return None
+    if not (kss_stat < kss_critical_10pct):
+        return None
+
+    return CointegrationResult(
+        beta=beta,
+        spread=spread,
+        eg_pvalue=eg_pvalue,
+        adf_pvalue=adf_pvalue,
+        kss_stat=kss_stat,
+    )
+
+
+---
+src/strategy_core.py
+---
+"""Core strategy logic extracted from backtest for live use.
+
+Implements pair selection, copula fitting, and signal generation.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+from loguru import logger
+from scipy import stats
+
+from src.copula_model import fit_best_marginal, fit_copula_candidates, h_functions_numerical
+from src.stats_tests import cointegration_with_reference
+
+
+@dataclass
+class TradingPair:
+    """Selected pair for trading."""
+
+    symbol1: str
+    symbol2: str
+    beta1: float
+    beta2: float
+    tau1: float  # Kendall tau with reference
+    tau2: float
+
+
+@dataclass
+class CopulaModel:
+    """Fitted copula model for a pair."""
+
+    marginal1: object  # FittedMarginal
+    marginal2: object  # FittedMarginal
+    copula: object  # FittedCopula
+    beta1: float
+    beta2: float
+
+
+@dataclass
+class TradingSignal:
+    """Trading signal generated by strategy."""
+
+    action: str  # "LONG_S1_SHORT_S2", "SHORT_S1_LONG_S2", "CLOSE", "WAIT"
+    h1_2: float  # Conditional probability h_{1|2}
+    h2_1: float  # Conditional probability h_{2|1}
+    timestamp: pd.Timestamp
+
+
+def kendall_tau(x: pd.Series, y: pd.Series) -> float:
+    """Calculate Kendall's tau correlation coefficient."""
+    a, b = x.align(y, join="inner")
+    a = a.to_numpy(dtype=float)
+    b = b.to_numpy(dtype=float)
+    mask = np.isfinite(a) & np.isfinite(b)
+    if mask.sum() < 100:
+        return float("nan")
+    tau, _p = stats.kendalltau(a[mask], b[mask])
+    return float(tau) if tau is not None else float("nan")
+
+
+def select_trading_pair(
+    prices: pd.DataFrame,
+    reference_symbol: str,
+    eg_alpha: float = 1.00,
+    adf_alpha: float = 0.10,
+    kss_critical: float = -1.92,
+) -> tuple[TradingPair | None, pd.DataFrame]:
+    """Select top 2 altcoins cointegrated with reference asset.
+
+    Args:
+        prices: DataFrame with timestamp index and symbol columns
+        reference_symbol: Reference asset (e.g., "BTCUSDT")
+        eg_alpha: Engle-Granger p-value threshold
+        adf_alpha: ADF p-value threshold
+        kss_critical: KSS critical value
+
+    Returns:
+        (TradingPair or None, DataFrame of all results)
+    """
+    if reference_symbol not in prices.columns:
+        logger.error(f"Reference symbol {reference_symbol} not in prices")
+        return None, pd.DataFrame()
+
+    ref = prices[reference_symbol].dropna()
+    candidates = [c for c in prices.columns if c != reference_symbol]
+
+    stats_rows: list[dict] = []
+
+    for sym in candidates:
+        # Test cointegration
+        res = cointegration_with_reference(
+            ref,
+            prices[sym],
+            eg_alpha=eg_alpha,
+            adf_alpha=adf_alpha,
+            kss_critical_10pct=kss_critical,
+            use_intercept=False,
+        )
+
+        if res is None:
+            continue
+
+        # Calculate Kendall tau
+        tau = kendall_tau(ref, prices[sym])
+        if not np.isfinite(tau):
+            continue
+
+        # Calculate score: abs(kss)/10 + (eg + adf)/2
+        score = abs(res.kss_stat) / 10.0 + (res.eg_pvalue + res.adf_pvalue) / 2.0
+
+        stats_rows.append({
+            "reference": reference_symbol,
+            "asset": sym,
+            "beta": res.beta,
+            "eg_pvalue": res.eg_pvalue,
+            "adf_pvalue": res.adf_pvalue,
+            "kss_stat": res.kss_stat,
+            "observations": len(res.spread),
+            "score": score,
+            "tau": tau,  # Still need tau for sorting
+        })
+
+    if not stats_rows:
+        logger.warning("No cointegrated pairs found")
+        return None, pd.DataFrame()
+
+    results_df = pd.DataFrame(stats_rows)
+
+    if len(stats_rows) < 2:
+        logger.warning(f"Only {len(stats_rows)} cointegrated pairs found, need at least 2")
+        return None, results_df.drop(columns=["tau"])
+
+    # Sort by tau (descending) and pick top 2
+    results_df = results_df.sort_values("tau", ascending=False)
+    
+    s1 = results_df.iloc[0]["asset"]
+    tau1 = results_df.iloc[0]["tau"]
+    beta1 = results_df.iloc[0]["beta"]
+    
+    s2 = results_df.iloc[1]["asset"]
+    tau2 = results_df.iloc[1]["tau"]
+    beta2 = results_df.iloc[1]["beta"]
+
+    logger.info(f"Selected pair: {s1} (τ={tau1:.3f}, β={beta1:.3f}), {s2} (τ={tau2:.3f}, β={beta2:.3f})")
+
+    pair = TradingPair(
+        symbol1=str(s1),
+        symbol2=str(s2),
+        beta1=float(beta1),
+        beta2=float(beta2),
+        tau1=float(tau1),
+        tau2=float(tau2),
+    )
+    
+    # Drop tau before returning for reporting
+    report_df = results_df.drop(columns=["tau"]).sort_values("score", ascending=True)
+    
+    return pair, report_df
+
+
+def fit_copula_model(
+    prices: pd.DataFrame,
+    pair: TradingPair,
+    reference_symbol: str,
+) -> CopulaModel | None:
+    """Fit copula model to spread processes.
+
+    Args:
+        prices: Formation period prices
+        pair: Selected trading pair
+        reference_symbol: Reference asset
+
+    Returns:
+        CopulaModel if successful, None otherwise
+    """
+    try:
+        ref = prices[reference_symbol]
+        p1 = prices[pair.symbol1]
+        p2 = prices[pair.symbol2]
+
+        # Calculate spreads: S_i = P_ref - beta_i * P_i
+        s1 = ref - pair.beta1 * p1
+        s2 = ref - pair.beta2 * p2
+
+        # Fit marginal distributions
+        m1 = fit_best_marginal(s1.to_numpy(dtype=float))
+        m2 = fit_best_marginal(s2.to_numpy(dtype=float))
+
+        # Transform to uniform via PIT
+        u1 = m1.cdf(s1.to_numpy(dtype=float))
+        u2 = m2.cdf(s2.to_numpy(dtype=float))
+        u = np.column_stack([u1, u2])
+        u = u[np.isfinite(u).all(axis=1)]
+
+        if u.shape[0] < 50:
+            raise ValueError("Not enough valid PIT samples")
+
+        # Fit copula
+        fitted = fit_copula_candidates(u)
+
+        # Find best copula that supports CDF
+        best = None
+        for cand in fitted:
+            try:
+                _ = cand.copula.cdf(np.array([[0.5, 0.5]], dtype=float))
+                best = cand
+                break
+            except (NotImplementedError, Exception):
+                continue
+
+        if best is None:
+            raise ValueError("No copula supports CDF evaluation")
+
+        logger.info(f"Fitted copula: {best.name} (AIC={best.aic:.2f})")
+
+        return CopulaModel(
+            marginal1=m1,
+            marginal2=m2,
+            copula=best,
+            beta1=pair.beta1,
+            beta2=pair.beta2,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to fit copula model: {e}")
+        return None
+
+
+def generate_signal(
+    current_prices: dict[str, float],
+    model: CopulaModel,
+    pair: TradingPair,
+    reference_symbol: str,
+    alpha1: float,
+    alpha2: float,
+) -> TradingSignal:
+    """Generate trading signal from current prices.
+
+    Args:
+        current_prices: Dict mapping symbol to current price
+        model: Fitted copula model
+        pair: Trading pair
+        reference_symbol: Reference asset
+        alpha1: Entry threshold
+        alpha2: Exit threshold
+
+    Returns:
+        TradingSignal
+    """
+    # Get current prices
+    p_ref = current_prices[reference_symbol]
+    p1 = current_prices[pair.symbol1]
+    p2 = current_prices[pair.symbol2]
+
+    # Calculate current spreads
+    s1_t = p_ref - model.beta1 * p1
+    s2_t = p_ref - model.beta2 * p2
+
+    # Transform to uniform
+    u1_t = float(model.marginal1.cdf(s1_t))
+    u2_t = float(model.marginal2.cdf(s2_t))
+
+    # Calculate h-functions
+    h1_2, h2_1 = h_functions_numerical(model.copula.copula, u1_t, u2_t)
+
+    # Trading rules (Table 3 & 4 from paper)
+    action = "WAIT"
+
+    if h1_2 < alpha1 and h2_1 > (1 - alpha1):
+        action = "LONG_S1_SHORT_S2"  # Long beta2*P2, Short beta1*P1
+    elif h1_2 > (1 - alpha1) and h2_1 < alpha1:
+        action = "SHORT_S1_LONG_S2"  # Short beta2*P2, Long beta1*P1
+    elif abs(h1_2 - 0.5) < alpha2 and abs(h2_1 - 0.5) < alpha2:
+        action = "CLOSE"
+
+    return TradingSignal(
+        action=action,
+        h1_2=h1_2,
+        h2_1=h2_1,
+        timestamp=pd.Timestamp.now(tz="UTC"),
+    )
+
+
+def calculate_position_sizes(
+    beta1: float,
+    beta2: float,
+    p1: float,
+    p2: float,
+    capital_per_side: float,
+) -> tuple[float, float]:
+    """Calculate position sizes for each asset.
+
+    Args:
+        beta1: Beta for asset 1
+        beta2: Beta for asset 2
+        p1: Price of asset 1
+        p2: Price of asset 2
+        capital_per_side: Maximum capital per leg
+
+    Returns:
+        (qty1, qty2) quantities
+    """
+    denom = max(abs(beta1 * p1), abs(beta2 * p2))
+    if denom <= 0:
+        return 0.0, 0.0
+
+    k = capital_per_side / denom
+    q1 = k * beta1
+    q2 = k * beta2
+
+    return float(q1), float(q2)
+
+
+---

@@ -19,8 +19,13 @@ with open("data/state.json") as f:
     state_data = json.load(f)
 
 # Initialize buffer
-all_symbols = [config["strategy"]["reference_symbol"]] + config["strategy"]["symbols"]
-buffer = DataBuffer(symbols=all_symbols, max_days=config["strategy"]["formation_days"] + 7)
+strategy_conf = config.get("strategy", {})
+mode = config.get("mode", "live")
+default_ref = "SPY" if mode == "alpaca" else "BTCUSDT"
+reference_symbol = strategy_conf.get("reference_symbol", default_ref)
+
+all_symbols = [reference_symbol] + strategy_conf.get("symbols", [])
+buffer = DataBuffer(symbols=all_symbols, max_days=strategy_conf.get("formation_days", 21) + 7)
 buffer.load(Path("data/price_buffer.parquet"))
 
 print(f"Buffer has {len(buffer.data)} symbols")
@@ -59,9 +64,9 @@ if state_data["current_pair"]:
                 prices,
                 None,  # We'd need to reconstruct the full model
                 current_pair,
-                config["strategy"]["reference_symbol"],
-                config["strategy"]["alpha1"],
-                config["strategy"]["alpha2"],
+                reference_symbol,
+                strategy_conf.get("alpha1", 0.20),
+                strategy_conf.get("alpha2", 0.10),
             )
             print(f"✓ Generated signal: {signal.action}")
         except Exception as e:
