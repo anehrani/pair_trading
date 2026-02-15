@@ -59,7 +59,7 @@ strategy:
   # Time windows (paper uses 21-day formation + 7-day trading)
   formation_days: 21
   trading_days: 7
-  interval: 5m  # 5-minute candles
+  interval: 1h  # 1-hour candles
   
   # Trading thresholds (paper's best: α₁=0.20, α₂=0.10)
   alpha1: 0.20  # Entry threshold
@@ -74,13 +74,17 @@ strategy:
   capital_per_side: 10000.0  # USD per leg
   initial_capital: 100000.0  # Starting capital
   fee_rate: 0.001  # 0.1% taker fee
+  max_drawdown_pct: 0.20 # 20% max drawdown circuit breaker
+  slippage_bps: 5.0 # 5 bps slippage
+  stop_loss_pct: 0.05 # 5% stop loss
+  take_profit_pct: 0.10 # 10% take profit
 
-# Risk Management (disabled per user request)
+# Risk Management
 risk:
-  enabled: false
-  max_drawdown: 0.50  # Not enforced
-  daily_loss_limit: 0.20  # Not enforced
-  max_leverage: 1.0  # No leverage
+  enabled: true
+  max_drawdown: 0.20
+  daily_loss_limit: 0.05
+  max_leverage: 1.0
 
 # Logging and Monitoring
 logging:
