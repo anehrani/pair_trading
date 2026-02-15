@@ -86,7 +86,7 @@ class Config:
         "ETH-USDT-SWAP",  "SOL-USDT-SWAP",  "XRP-USDT-SWAP",
         "DOGE-USDT-SWAP", "ADA-USDT-SWAP",  "AVAX-USDT-SWAP",
         "LINK-USDT-SWAP", "DOT-USDT-SWAP",  "LTC-USDT-SWAP",
-        "POL-USDT-SWAP",
+        "NEAR-USDT-SWAP",
     ])
 
     # --- Strategy parameters ---
@@ -198,8 +198,9 @@ class OKXClient:
         collected: List[list] = []
         after = ""
 
+        # Step 1: Recent candles
         while len(collected) < count:
-            params: dict = {"instId": inst_id, "bar": bar, "limit": "300"}
+            params: dict = {"instId": inst_id, "bar": bar, "limit": "100"}
             if after:
                 params["after"] = after
             rows = self._request("GET", "/api/v5/market/candles", params=params)
@@ -207,9 +208,23 @@ class OKXClient:
                 break
             collected.extend(rows)
             after = rows[-1][0]          # oldest ts in batch
-            if len(rows) < 300:
+            if len(rows) < 100 or len(collected) >= 1440:
                 break
             time.sleep(0.12)             # respect rate limit
+
+        # Step 2: Historical candles if more needed
+        while len(collected) < count:
+            params: dict = {"instId": inst_id, "bar": bar, "limit": "100"}
+            if after:
+                params["after"] = after
+            rows = self._request("GET", "/api/v5/market/history-candles", params=params)
+            if not rows:
+                break
+            collected.extend(rows)
+            after = rows[-1][0]
+            if len(rows) < 100:
+                break
+            time.sleep(0.12)
 
         collected = collected[:count]
         collected.reverse()              # → oldest first
@@ -1199,7 +1214,7 @@ def main():
         if not cfg.api_key:
             log.error("Dry-run still needs API key for market data")
             sys.exit(1)
-        client = PaperClient(cfg)
+        client = OKXClient(cfg)
     elif args.mode == "paper":
         client = PaperClient(cfg)
     else:
