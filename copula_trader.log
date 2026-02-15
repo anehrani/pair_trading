@@ -1,0 +1,91 @@
+2026-02-16 00:28:35,455 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:28:35,456 [INFO]    COPULA PAIRS TRADER  —  SIMULATED
+2026-02-16 00:28:35,456 [INFO]    Ref: BTC-USDT-SWAP   Alts: 10   Leverage: 3x
+2026-02-16 00:28:35,456 [INFO]    Capital / leg: $5000   Stop: 3.0%
+2026-02-16 00:28:35,456 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:28:35,456 [INFO] Account balance: $100000.00 USDT
+2026-02-16 00:28:35,456 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:28:35,456 [INFO] FORMATION PERIOD — fetching 504 candles …
+2026-02-16 00:28:42,478 [ERROR] API code=51001  msg=Instrument ID, Instrument ID code, or Spread ID doesn't exist.
+2026-02-16 00:28:42,478 [WARNING] Skipping MATIC-USDT-SWAP  (0 candles)
+2026-02-16 00:28:42,480 [INFO] Price matrix  504 × 10
+2026-02-16 00:28:42,503 [INFO]   ETH-USDT-SWAP        β=0.6249  α=6.3884  ✓
+2026-02-16 00:28:42,512 [INFO]   SOL-USDT-SWAP        β=0.6356  α=8.3163  ✓
+2026-02-16 00:28:42,520 [INFO]   XRP-USDT-SWAP        β=0.7890  α=10.8669  ✓
+2026-02-16 00:28:42,541 [INFO]   AVAX-USDT-SWAP       β=0.9319  α=9.1010  ✓
+2026-02-16 00:28:42,547 [INFO]   LINK-USDT-SWAP       β=0.9298  α=9.0796  ✓
+2026-02-16 00:28:42,553 [INFO]   DOT-USDT-SWAP        β=0.7521  α=10.9333  ✓
+2026-02-16 00:28:42,559 [INFO]   LTC-USDT-SWAP        β=1.0323  α=7.0206  ✓
+2026-02-16 00:28:42,563 [INFO] Pair selected:  AVAX-USDT-SWAP  (τ=0.341)  &  DOT-USDT-SWAP  (τ=0.282)
+2026-02-16 00:28:42,575 [INFO] Copula selection  →  gumbel  (θ=3.0443, AIC=-735.4)
+2026-02-16 00:28:42,576 [INFO] Model ready  pair=('AVAX-USDT-SWAP', 'DOT-USDT-SWAP')  copula=gumbel
+2026-02-16 00:28:44,431 [ERROR] API code=51001  msg=Instrument ID, Instrument ID code, or Spread ID doesn't exist.
+2026-02-16 00:28:44,433 [INFO] Signal  action=hold                    h12=0.1293  h21=0.5028
+2026-02-16 00:28:44,434 [INFO] Next cycle in 36 min  |  No trades yet.
+2026-02-16 00:29:14,413 [INFO] Shutting down …
+2026-02-16 00:29:14,416 [INFO] Final stats:  No trades yet.
+2026-02-16 00:29:14,416 [INFO] Done.
+2026-02-16 00:29:21,456 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:29:21,456 [INFO]    COPULA PAIRS TRADER  —  SIMULATED
+2026-02-16 00:29:21,456 [INFO]    Ref: BTC-USDT-SWAP   Alts: 10   Leverage: 3x
+2026-02-16 00:29:21,456 [INFO]    Capital / leg: $5000   Stop: 3.0%
+2026-02-16 00:29:21,456 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:29:21,456 [INFO] Account balance: $100000.00 USDT
+2026-02-16 00:29:21,457 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:29:21,457 [INFO] FORMATION PERIOD — fetching 504 candles …
+2026-02-16 00:29:29,198 [ERROR] API code=51001  msg=Instrument ID, Instrument ID code, or Spread ID doesn't exist.
+2026-02-16 00:29:29,198 [WARNING] Skipping POL-USDT-SWAP  (0 candles)
+2026-02-16 00:29:29,202 [INFO] Price matrix  504 × 10
+2026-02-16 00:29:29,217 [INFO]   ETH-USDT-SWAP        β=0.6248  α=6.3885  ✓
+2026-02-16 00:29:29,227 [INFO]   SOL-USDT-SWAP        β=0.6356  α=8.3164  ✓
+2026-02-16 00:29:29,237 [INFO]   XRP-USDT-SWAP        β=0.7890  α=10.8669  ✓
+2026-02-16 00:29:29,260 [INFO]   AVAX-USDT-SWAP       β=0.9319  α=9.1010  ✓
+2026-02-16 00:29:29,266 [INFO]   LINK-USDT-SWAP       β=0.9298  α=9.0797  ✓
+2026-02-16 00:29:29,273 [INFO]   DOT-USDT-SWAP        β=0.7521  α=10.9333  ✓
+2026-02-16 00:29:29,279 [INFO]   LTC-USDT-SWAP        β=1.0324  α=7.0204  ✓
+2026-02-16 00:29:29,281 [INFO] Pair selected:  AVAX-USDT-SWAP  (τ=0.341)  &  DOT-USDT-SWAP  (τ=0.282)
+2026-02-16 00:29:29,285 [INFO] Copula selection  →  gumbel  (θ=3.0440, AIC=-735.3)
+2026-02-16 00:29:29,285 [INFO] Model ready  pair=('AVAX-USDT-SWAP', 'DOT-USDT-SWAP')  copula=gumbel
+2026-02-16 00:29:30,539 [ERROR] API code=51001  msg=Instrument ID, Instrument ID code, or Spread ID doesn't exist.
+2026-02-16 00:29:30,539 [INFO] Signal  action=hold                    h12=0.1306  h21=0.5307
+2026-02-16 00:29:30,539 [INFO] Next cycle in 35 min  |  No trades yet.
+2026-02-16 00:30:08,558 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:30:08,558 [INFO]    COPULA PAIRS TRADER  —  SIMULATED
+2026-02-16 00:30:08,558 [INFO]    Ref: BTC-USDT-SWAP   Alts: 10   Leverage: 3x
+2026-02-16 00:30:08,558 [INFO]    Capital / leg: $5000   Stop: 3.0%
+2026-02-16 00:30:08,558 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:30:08,558 [INFO] Account balance: $100000.00 USDT
+2026-02-16 00:30:08,558 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:30:08,558 [INFO] FORMATION PERIOD — fetching 504 candles …
+2026-02-16 00:30:15,604 [ERROR] API code=51001  msg=Instrument ID, Instrument ID code, or Spread ID doesn't exist.
+2026-02-16 00:30:15,604 [WARNING] Skipping POL-USDT-SWAP  (0 candles)
+2026-02-16 00:30:15,606 [INFO] Price matrix  504 × 10
+2026-02-16 00:30:15,619 [INFO]   ETH-USDT-SWAP        β=0.6249  α=6.3884  ✓
+2026-02-16 00:30:15,628 [INFO]   SOL-USDT-SWAP        β=0.6356  α=8.3163  ✓
+2026-02-16 00:30:15,637 [INFO]   XRP-USDT-SWAP        β=0.7890  α=10.8669  ✓
+2026-02-16 00:30:15,659 [INFO]   AVAX-USDT-SWAP       β=0.9319  α=9.1010  ✓
+2026-02-16 00:30:15,665 [INFO]   LINK-USDT-SWAP       β=0.9298  α=9.0796  ✓
+2026-02-16 00:30:15,671 [INFO]   DOT-USDT-SWAP        β=0.7521  α=10.9333  ✓
+2026-02-16 00:30:15,678 [INFO]   LTC-USDT-SWAP        β=1.0323  α=7.0209  ✓
+2026-02-16 00:30:15,680 [INFO] Pair selected:  AVAX-USDT-SWAP  (τ=0.341)  &  DOT-USDT-SWAP  (τ=0.283)
+2026-02-16 00:30:15,686 [INFO] Copula selection  →  gumbel  (θ=3.0440, AIC=-735.3)
+2026-02-16 00:30:15,686 [INFO] Model ready  pair=('AVAX-USDT-SWAP', 'DOT-USDT-SWAP')  copula=gumbel
+2026-02-16 00:30:17,053 [ERROR] API code=51001  msg=Instrument ID, Instrument ID code, or Spread ID doesn't exist.
+2026-02-16 00:30:17,053 [INFO] Signal  action=hold                    h12=0.1031  h21=0.5608
+2026-02-16 00:30:17,053 [INFO] Next cycle in 35 min  |  No trades yet.
+2026-02-16 00:32:19,210 [INFO] Shutting down …
+2026-02-16 00:32:19,211 [INFO] Final stats:  No trades yet.
+2026-02-16 00:32:19,211 [INFO] Done.
+2026-02-16 00:33:00,280 [INFO] Shutting down …
+2026-02-16 00:33:00,282 [INFO] Final stats:  No trades yet.
+2026-02-16 00:33:00,282 [INFO] Done.
+2026-02-16 00:33:03,248 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:33:03,248 [INFO]    COPULA PAIRS TRADER  —  SIMULATED
+2026-02-16 00:33:03,248 [INFO]    Ref: BTC-USDT-SWAP   Alts: 10   Leverage: 3x
+2026-02-16 00:33:03,248 [INFO]    Capital / leg: $5000   Stop: 3.0%
+2026-02-16 00:33:03,248 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:33:03,248 [INFO] Account balance: $100000.00 USDT
+2026-02-16 00:33:03,248 [INFO] ═══════════════════════════════════════════════════════
+2026-02-16 00:33:03,248 [INFO] FORMATION PERIOD — fetching 5760 candles …
+2026-02-16 00:33:04,552 [WARNING] Skipping BTC-USDT-SWAP  (1440 candles)
+2026-02-16 00:33:05,690 [WARNING] Skipping ETH-USDT-SWAP  (1440 candles)
